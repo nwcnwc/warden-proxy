@@ -109,18 +109,20 @@ This means a malicious or buggy app **cannot exfiltrate real credentials**, beca
 ## Quick Start
 
 ```bash
-# Clone the repo
+# Clone and build (requires Rust)
 git clone https://github.com/nwcnwc/warden-proxy.git
 cd warden-proxy
+cargo build --release
+
+# Or download a pre-built binary (coming soon)
+# curl -fsSL https://github.com/nwcnwc/warden-proxy/releases/latest/download/warden -o warden
 
 # Initialize config
-node bin/warden.js init
+./target/release/warden init
 
-# Edit ~/.warden/config.yaml with your real API keys
-# (or set environment variables: OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
-
+# Edit ~/.warden/config.json with your key sources
 # Start the proxy
-node bin/warden.js start
+./target/release/warden start
 ```
 
 ### Transparent Mode (Service Worker)
@@ -150,26 +152,41 @@ const response = await fetch("http://localhost:7400/proxy/openai/v1/chat/complet
 ## Configuration
 
 ```json
-// ~/.warden/config.yaml (JSON format in v0.1)
+// ~/.warden/config.json
 {
   "port": 7400,
   "log_level": "info",
   "keys": {
     "openai": {
+      "base_url": "https://api.openai.com",
       "header": "Authorization",
-      "value": "Bearer ${OPENAI_API_KEY}",
-      "base_url": "https://api.openai.com"
+      "source": {
+        "provider": "1password",
+        "ref": "op://Development/OpenAI/credential",
+        "prefix": "Bearer "
+      }
     },
     "anthropic": {
+      "base_url": "https://api.anthropic.com",
       "header": "x-api-key",
-      "value": "${ANTHROPIC_API_KEY}",
-      "base_url": "https://api.anthropic.com"
+      "source": {
+        "provider": "env",
+        "ref": "ANTHROPIC_API_KEY"
+      }
+    },
+    "google": {
+      "base_url": "https://generativelanguage.googleapis.com",
+      "header": "x-goog-api-key",
+      "source": {
+        "provider": "keyring",
+        "ref": "warden-proxy/google"
+      }
     }
   },
   "access": [
     {
       "origin": "http://localhost:*",
-      "allow": ["openai", "anthropic"]
+      "allow": ["openai", "anthropic", "google"]
     }
   ],
   "limits": {
@@ -179,7 +196,27 @@ const response = await fetch("http://localhost:7400/proxy/openai/v1/chat/complet
 }
 ```
 
-Environment variables are interpolated: `${OPENAI_API_KEY}` is replaced with the value of `$OPENAI_API_KEY` at startup.
+### Key Sources
+
+Every API key can come from a different source. Mix and match per-service:
+
+| Provider | Config | What it does |
+|----------|--------|-------------|
+| **1Password** | `"provider": "1password"` | Fetches via `op` CLI. Ref: `op://Vault/Item/field` |
+| **Bitwarden** | `"provider": "bitwarden"` | Fetches via `bw` CLI. Ref: item name or ID |
+| **Bitwarden Secrets** | `"provider": "bitwarden-secrets"` | Fetches via `bws` CLI. Ref: secret ID |
+| **OS Keyring** | `"provider": "keyring"` | macOS Keychain, Linux Secret Service, Windows Credential Manager |
+| **Encrypted Vault** | `"provider": "encrypted"` | Local encrypted file (`~/.warden/vault.enc`) |
+| **Environment Variable** | `"provider": "env"` | Reads from `$VAR_NAME` |
+| **Inline** | `"provider": "inline"` | Plain text in config (development only) |
+
+Source fields:
+- `ref` — Reference string (secret path, env var name, keyring service, etc.)
+- `prefix` — Prepended to resolved value (e.g., `"Bearer "` for Authorization headers)
+- `field` — Field name for password managers (default: `"credential"` or `"password"`)
+- `path` — File path for encrypted vault (default: `~/.warden/vault.enc`)
+
+Legacy mode still works: use `"value": "Bearer ${OPENAI_API_KEY}"` for simple env var interpolation without a `source` block.
 
 ## Architecture
 

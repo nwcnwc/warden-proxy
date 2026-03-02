@@ -10,18 +10,64 @@ pub struct WardenConfig {
     #[serde(default = "default_log_level")]
     pub log_level: String,
     #[serde(default)]
-    pub keys: HashMap<String, ServiceConfig>,
+    pub keys: HashMap<String, ServiceKeyConfig>,
     #[serde(default)]
     pub access: Vec<AccessRule>,
     #[serde(default)]
     pub limits: HashMap<String, LimitConfig>,
 }
 
+/// Configuration for a single service's API key.
+/// Supports multiple key sources — each service can use a different one.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceConfig {
-    pub header: String,
-    pub value: String,
+pub struct ServiceKeyConfig {
+    /// HTTP header to inject (default: "Authorization")
+    pub header: Option<String>,
+    /// Base URL of the API service
     pub base_url: String,
+    /// Direct value (legacy mode — env var interpolation supported)
+    pub value: Option<String>,
+    /// Key source configuration (preferred over direct value)
+    pub source: Option<KeySource>,
+}
+
+/// Where to fetch the actual API key from.
+///
+/// Supported providers:
+///   - "1password" / "op"     — 1Password CLI
+///   - "bitwarden" / "bw"     — Bitwarden CLI
+///   - "bitwarden-secrets"    — Bitwarden Secrets Manager
+///   - "keyring" / "keychain" — OS keyring (macOS Keychain, Linux Secret Service, Windows)
+///   - "encrypted" / "vault"  — Local encrypted vault file (~/.warden/vault.enc)
+///   - "env"                  — Environment variable
+///   - "inline" / "plain"     — Direct value (development only)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct KeySource {
+    /// Which provider to use
+    pub provider: String,
+
+    /// Reference string (meaning depends on provider):
+    ///   - 1Password: "op://Vault/Item/field" or item name
+    ///   - Bitwarden: item name or ID
+    ///   - Keyring: service name (default: "warden-proxy/<service>")
+    ///   - Encrypted: key name in vault
+    ///   - Env: environment variable name
+    ///   - Inline: the actual value
+    #[serde(alias = "ref")]
+    pub reference: Option<String>,
+
+    /// Alias for reference (supports "ref" in JSON which is a Rust keyword)
+    #[serde(rename = "ref", skip_serializing)]
+    pub ref_field: Option<String>,
+
+    /// Prefix to prepend to resolved value (e.g., "Bearer " for Authorization headers)
+    pub prefix: Option<String>,
+
+    /// Field name for password managers (e.g., "password", "credential", "api-key")
+    pub field: Option<String>,
+
+    /// Path to vault file (for encrypted provider)
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,7 +117,7 @@ fn interpolate_env(s: &str) -> String {
     result
 }
 
-/// Load config from file, interpolating env vars
+/// Load config from file, interpolating env vars in plain values
 pub fn load_config() -> Result<WardenConfig, Box<dyn std::error::Error>> {
     let path = config_path();
 
@@ -88,6 +134,7 @@ pub fn load_config() -> Result<WardenConfig, Box<dyn std::error::Error>> {
     }
 
     let raw = fs::read_to_string(&path)?;
+    // Only interpolate env vars in plain values (not in source references)
     let interpolated = interpolate_env(&raw);
     let config: WardenConfig = serde_json::from_str(&interpolated)?;
 
@@ -110,14 +157,21 @@ pub fn init_config() -> Result<(), Box<dyn std::error::Error>> {
             "log_level": "info",
             "keys": {
                 "openai": {
+                    "base_url": "https://api.openai.com",
                     "header": "Authorization",
-                    "value": "Bearer ${OPENAI_API_KEY}",
-                    "base_url": "https://api.openai.com"
+                    "source": {
+                        "provider": "env",
+                        "ref": "OPENAI_API_KEY",
+                        "prefix": "Bearer "
+                    }
                 },
                 "anthropic": {
+                    "base_url": "https://api.anthropic.com",
                     "header": "x-api-key",
-                    "value": "${ANTHROPIC_API_KEY}",
-                    "base_url": "https://api.anthropic.com"
+                    "source": {
+                        "provider": "env",
+                        "ref": "ANTHROPIC_API_KEY"
+                    }
                 }
             },
             "access": [
@@ -140,9 +194,15 @@ pub fn init_config() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n🔒 Warden initialized!");
     println!("\nNext steps:");
-    println!("  1. Edit {} with your API keys", path.display());
-    println!("  2. Set environment variables (OPENAI_API_KEY, etc.)");
-    println!("  3. Run: warden start");
+    println!("  1. Edit {} with your API keys and sources", path.display());
+    println!("  2. Run: warden start");
+    println!("\nKey source options:");
+    println!("  • env          — Environment variable (default)");
+    println!("  • 1password    — 1Password CLI (op)");
+    println!("  • bitwarden    — Bitwarden CLI (bw)");
+    println!("  • keyring      — OS keyring (Keychain, Secret Service, Credential Manager)");
+    println!("  • encrypted    — Local encrypted vault (~/.warden/vault.enc)");
+    println!("  • inline       — Plain text (development only)");
 
     Ok(())
 }
