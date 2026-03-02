@@ -26,6 +26,8 @@
  */
 
 const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
 const { loadConfig } = require('./config');
 const { createProxyHandler } = require('./proxy');
 const { createCorsHandler } = require('./cors');
@@ -63,6 +65,39 @@ async function start(options = {}) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ status: 'ok', version: require('../package.json').version }));
       return;
+    }
+
+    // Routes endpoint — used by Service Worker to learn which APIs to intercept
+    if (req.url === '/routes') {
+      const routes = {};
+      const services = vault.listServices();
+      for (const name of services) {
+        const svc = vault.getService(name);
+        if (svc && svc.base_url) {
+          routes[svc.base_url.replace(/\/$/, '')] = name;
+        }
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(routes));
+      return;
+    }
+
+    // Serve client files (Service Worker, loader)
+    if (req.url.startsWith('/client/')) {
+      const filename = req.url.replace('/client/', '');
+      const filePath = path.join(__dirname, 'client', filename);
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const ext = path.extname(filename);
+        const contentType = ext === '.js' ? 'application/javascript' : 'text/plain';
+        // Service Worker requires same-origin OR the Service-Worker-Allowed header
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Service-Worker-Allowed': '/',
+        });
+        res.end(content);
+        return;
+      }
     }
 
     // Status endpoint

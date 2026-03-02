@@ -59,13 +59,23 @@ function createProxyHandler({ vault, access, limiter, logger, config }) {
     // Build target URL
     const targetUrl = new URL(targetPath, service.base_url);
 
-    // Build headers - copy from original request, add auth
+    // Build headers - copy from original request
     const headers = { ...req.headers };
     delete headers.host;
     delete headers.origin;
     delete headers.referer;
 
-    // Inject API key
+    // SECURITY: Strip ALL auth from the VM's request.
+    // The app may send fake keys, real keys, garbage — doesn't matter.
+    // We throw away everything auth-related and inject based SOLELY
+    // on the matched destination service. Never text replacement.
+    // Never based on what the app sent. Only based on where it's going.
+    delete headers.authorization;
+    delete headers['x-api-key'];
+    delete headers['api-key'];
+    delete headers.cookie;
+
+    // Inject the REAL key based on destination service identity
     if (service.header && service.value) {
       headers[service.header.toLowerCase()] = service.value;
     }
