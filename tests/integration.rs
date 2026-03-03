@@ -55,9 +55,11 @@ fn service_worker_contains_no_secrets() {
     // Should never contain actual API key patterns
     assert!(!sw_source.contains("sk-"), "SW must not contain OpenAI key patterns");
     assert!(!sw_source.contains("sk-ant-"), "SW must not contain Anthropic key patterns");
-    // Should not inject API keys — that's the proxy's job
-    assert!(!sw_source.contains("inject_key"), "SW should not inject API keys (proxy does that)");
-    assert!(!sw_source.contains("api_key"), "SW should not reference api_key");
+    // Should not inject anything — that's the proxy's job
+    assert!(!sw_source.contains("inject"), "SW should not inject anything (proxy does that)");
+    // Should not reference session storage or secrets
+    assert!(!sw_source.contains("session_storage"), "SW should not touch session storage");
+    assert!(!sw_source.contains("local_storage"), "SW should not touch local storage");
 }
 
 /// Verify client files are properly embedded
