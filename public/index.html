@@ -440,8 +440,9 @@
   <div class="admin-section">
     <div class="admin-header">
       <svg viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
-      <h2>Admin</h2>
+      <h2>Warden's Office</h2>
     </div>
+    <p style="color:#b89a5a;margin:-8px 0 12px 0;font-size:0.9em;opacity:0.8;">The warden holds the real keys.</p>
     <div class="admin-grid">
       <a class="admin-card" href="/admin/keys/">
         <div class="admin-icon">&#x1F511;</div>
@@ -462,13 +463,14 @@
     </div>
   </div>
 
-  <!-- Default Apps -->
+  <!-- The Jail -->
   <div class="section">
     <div class="section-header">
-      <h2>Default Apps</h2>
+      <h2>The Jail</h2>
       <span class="section-count">3</span>
-      <span class="section-label">Default Apps</span>
+      <span class="section-label">Apps</span>
     </div>
+    <p style="color:var(--text-muted);margin:-8px 0 12px 0;font-size:0.9em;">Give the jailed apps fake keys.</p>
     <div class="app-grid">
       <a class="app-card" href="/apps/ai-chat/">
         <div class="app-card-top">
@@ -514,19 +516,12 @@
     </div>
   </div>
 
-  <!-- User Apps -->
-  <div class="section">
-    <div class="section-header">
-      <h2>Your Apps</h2>
-      <span class="section-count" id="user-app-count">0</span>
-      <span class="section-label">User-installed</span>
-    </div>
-    <div class="app-grid" id="user-apps-grid">
-      <div class="user-apps-empty" id="user-apps-empty">
-        <p style="margin-bottom:8px;">Drop HTML files into your apps directory to see them here.</p>
-        <p><code>~/.warden/sites/apps/</code></p>
-      </div>
-    </div>
+  <!-- User Apps (part of The Jail) -->
+  <div id="user-apps-grid" class="app-grid" style="margin-top:0;">
+  </div>
+  <div class="user-apps-empty" id="user-apps-empty" style="margin: 0 auto 2rem; max-width:400px;">
+    <p style="margin-bottom:8px;">Drop HTML files into the apps directory to admit new inmates.</p>
+    <p><code>~/.warden/sites/apps/</code></p>
   </div>
 
 </div>

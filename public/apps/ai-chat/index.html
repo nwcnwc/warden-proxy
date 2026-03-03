@@ -277,6 +277,164 @@
     .header { flex-wrap: wrap; gap: 8px; }
     .messages { padding: 12px; }
   }
+
+  /* ── Settings Modal ── */
+  .settings-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 15px;
+    transition: all 0.2s;
+    line-height: 1;
+  }
+  .settings-btn:hover {
+    border-color: var(--accent-border);
+    color: var(--text);
+  }
+
+  .settings-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.7);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .settings-overlay.open { display: flex; }
+
+  .settings-modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    width: 480px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    animation: modalIn 0.2s ease-out;
+  }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .settings-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid var(--border);
+  }
+  .settings-header h2 { font-size: 16px; font-weight: 600; }
+
+  .settings-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 20px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    line-height: 1;
+  }
+  .settings-close:hover { color: var(--text); background: var(--surface-hover); }
+
+  .settings-body { padding: 24px; }
+
+  .settings-intro {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin-bottom: 20px;
+    line-height: 1.5;
+  }
+
+  .key-section { margin-bottom: 20px; }
+  .key-section:last-child { margin-bottom: 0; }
+
+  .key-label {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .key-status {
+    font-size: 11px;
+    font-weight: 400;
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+  .key-status.set { background: rgba(0, 255, 136, 0.15); color: var(--accent); }
+  .key-status.unset { background: rgba(255, 170, 0, 0.15); color: #ffaa00; }
+
+  .key-input-row { display: flex; gap: 6px; }
+
+  .key-input {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+  }
+  .key-input:focus { outline: none; border-color: var(--accent); }
+  .key-input::placeholder { color: var(--text-muted); opacity: 0.5; }
+
+  .key-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 8px 10px;
+    cursor: pointer;
+    font-size: 13px;
+    min-width: 38px;
+  }
+  .key-toggle:hover { color: var(--text); border-color: var(--accent-border); }
+
+  .settings-footer {
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+
+  .settings-save-btn {
+    background: var(--accent);
+    color: #0a0a0a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .settings-save-btn:hover { opacity: 0.85; }
+
+  .settings-cancel-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .settings-cancel-btn:hover { color: var(--text); border-color: var(--accent-border); }
 </style>
 </head>
 <body>
@@ -293,7 +451,45 @@
     <select class="model-select" id="model">
       <option value="">Select model</option>
     </select>
+    <button class="settings-btn" onclick="toggleSettings()" title="API Settings">&#9881;</button>
     <button class="clear-btn" onclick="clearChat()">Clear</button>
+  </div>
+</div>
+
+<div class="settings-overlay" id="settings-overlay">
+  <div class="settings-modal">
+    <div class="settings-header">
+      <h2>API Settings</h2>
+      <button class="settings-close" onclick="toggleSettings()">&times;</button>
+    </div>
+    <div class="settings-body">
+      <p class="settings-intro" id="settings-intro">Enter your API keys to get started. Keys are stored locally in your browser.</p>
+      <div class="key-section">
+        <div class="key-label">OpenAI <span class="key-status unset" id="status-openai">not set</span></div>
+        <div class="key-input-row">
+          <input class="key-input" type="password" id="key-openai" placeholder="sk-...">
+          <button class="key-toggle" onclick="toggleKeyVis('openai')" title="Show/hide key">&#128065;</button>
+        </div>
+      </div>
+      <div class="key-section">
+        <div class="key-label">Anthropic <span class="key-status unset" id="status-anthropic">not set</span></div>
+        <div class="key-input-row">
+          <input class="key-input" type="password" id="key-anthropic" placeholder="sk-ant-...">
+          <button class="key-toggle" onclick="toggleKeyVis('anthropic')" title="Show/hide key">&#128065;</button>
+        </div>
+      </div>
+      <div class="key-section">
+        <div class="key-label">Google <span class="key-status unset" id="status-google">not set</span></div>
+        <div class="key-input-row">
+          <input class="key-input" type="password" id="key-google" placeholder="AIza...">
+          <button class="key-toggle" onclick="toggleKeyVis('google')" title="Show/hide key">&#128065;</button>
+        </div>
+      </div>
+    </div>
+    <div class="settings-footer">
+      <button class="settings-cancel-btn" onclick="toggleSettings()">Cancel</button>
+      <button class="settings-save-btn" onclick="saveSettings()">Save Keys</button>
+    </div>
   </div>
 </div>
 
@@ -318,6 +514,73 @@
   let messages = [];
   let streaming = false;
   let availableServices = [];
+
+  // ── API Key Management ──
+  const API_KEYS_STORAGE = 'ai-chat-api-keys';
+  const KEY_HEADERS = {
+    openai: { header: 'Authorization', prefix: 'Bearer ' },
+    anthropic: { header: 'x-api-key', prefix: '' },
+    google: { header: 'x-goog-api-key', prefix: '' }
+  };
+
+  function loadApiKeys() {
+    try { return JSON.parse(localStorage.getItem(API_KEYS_STORAGE) || '{}'); }
+    catch(e) { return {}; }
+  }
+
+  function saveApiKeysToStorage(keys) {
+    localStorage.setItem(API_KEYS_STORAGE, JSON.stringify(keys));
+  }
+
+  window.toggleSettings = function(forceOpen) {
+    var overlay = document.getElementById('settings-overlay');
+    var isOpen = overlay.classList.contains('open');
+    if (forceOpen === true || !isOpen) {
+      var keys = loadApiKeys();
+      ['openai', 'anthropic', 'google'].forEach(function(p) {
+        document.getElementById('key-' + p).value = keys[p] || '';
+        document.getElementById('key-' + p).type = 'password';
+        var status = document.getElementById('status-' + p);
+        if (keys[p]) {
+          status.textContent = 'configured';
+          status.className = 'key-status set';
+        } else {
+          status.textContent = 'not set';
+          status.className = 'key-status unset';
+        }
+      });
+      overlay.classList.add('open');
+    } else {
+      overlay.classList.remove('open');
+    }
+  };
+
+  window.toggleKeyVis = function(provider) {
+    var input = document.getElementById('key-' + provider);
+    input.type = input.type === 'password' ? 'text' : 'password';
+  };
+
+  window.saveSettings = function() {
+    var keys = {};
+    ['openai', 'anthropic', 'google'].forEach(function(p) {
+      var val = document.getElementById('key-' + p).value.trim();
+      if (val) keys[p] = val;
+    });
+    saveApiKeysToStorage(keys);
+    updateProviderLabels();
+    document.getElementById('settings-overlay').classList.remove('open');
+  };
+
+  function updateProviderLabels() {
+    var select = document.getElementById('provider');
+    var keys = loadApiKeys();
+    Array.from(select.options).forEach(function(opt) {
+      if (opt.value && PROVIDERS[opt.value]) {
+        var suffix = keys[opt.value] ? '' : ' (no key)';
+        opt.textContent = PROVIDERS[opt.value].name + suffix;
+      }
+    });
+  }
 
   const PROVIDERS = {
     openai: {
@@ -418,12 +681,14 @@
     select.innerHTML = '';
 
     let found = false;
+    var savedKeys = loadApiKeys();
     Object.keys(PROVIDERS).forEach(function(key) {
       if (availableServices.indexOf(key) !== -1) {
         found = true;
         var opt = document.createElement('option');
         opt.value = key;
-        opt.textContent = PROVIDERS[key].name;
+        var suffix = savedKeys[key] ? '' : ' (no key)';
+        opt.textContent = PROVIDERS[key].name + suffix;
         select.appendChild(opt);
       }
     });
@@ -588,6 +853,13 @@
       });
     }
 
+    // Inject API key if configured
+    var apiKeys = loadApiKeys();
+    if (apiKeys[provider] && KEY_HEADERS[provider]) {
+      var kh = KEY_HEADERS[provider];
+      headers[kh.header] = kh.prefix + apiKeys[provider];
+    }
+
     streaming = true;
     document.getElementById('send-btn').disabled = true;
 
@@ -661,6 +933,12 @@
   });
 
   loadServices();
+
+  // Auto-show settings if no keys configured on first load
+  var initialKeys = loadApiKeys();
+  if (!initialKeys.openai && !initialKeys.anthropic && !initialKeys.google) {
+    setTimeout(function() { toggleSettings(true); }, 500);
+  }
 })();
 </script>
 </body>
