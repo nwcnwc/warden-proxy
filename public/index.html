@@ -15,6 +15,9 @@
     --accent: #00ff88;
     --accent-dim: rgba(0, 255, 136, 0.1);
     --accent-border: rgba(0, 255, 136, 0.2);
+    --admin-accent: #ffaa00;
+    --admin-dim: rgba(255, 170, 0, 0.1);
+    --admin-border: rgba(255, 170, 0, 0.25);
     --danger: #ff4444;
     --radius: 12px;
   }
@@ -28,7 +31,7 @@
     min-height: 100vh;
   }
 
-  /* ── Top Bar ── */
+  /* Top Bar */
   .topbar {
     display: flex;
     align-items: center;
@@ -91,49 +94,139 @@
     50% { opacity: 0.4; }
   }
 
-  .topbar-right {
+  .topbar-stats {
     display: flex;
     align-items: center;
-    gap: 16px;
+    gap: 20px;
     font-size: 13px;
     color: var(--text-muted);
   }
 
-  .topbar-right a {
-    color: var(--text-muted);
-    text-decoration: none;
-    transition: color 0.2s;
+  .topbar-stat {
+    display: flex;
+    align-items: center;
+    gap: 5px;
   }
 
-  .topbar-right a:hover { color: var(--accent); }
+  .topbar-stat-val {
+    color: var(--text);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
 
-  /* ── Main Content ── */
+  /* Main Content */
   .container {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 48px 32px;
+    padding: 40px 32px;
   }
 
-  .hero {
-    text-align: center;
-    margin-bottom: 56px;
+  /* Admin Section */
+  .admin-section {
+    margin-bottom: 48px;
+    border: 1px solid var(--admin-border);
+    border-radius: var(--radius);
+    overflow: hidden;
   }
 
-  .hero h1 {
-    font-size: 32px;
-    font-weight: 700;
-    margin-bottom: 8px;
-    letter-spacing: -0.5px;
+  .admin-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: var(--admin-dim);
+    border-bottom: 1px solid var(--admin-border);
   }
 
-  .hero p {
+  .admin-header svg {
+    width: 14px;
+    height: 14px;
+    fill: var(--admin-accent);
+  }
+
+  .admin-header h2 {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--admin-accent);
+  }
+
+  .admin-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0;
+  }
+
+  .admin-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+    text-decoration: none;
+    color: inherit;
+    transition: background 0.15s;
+    border-right: 1px solid var(--border);
+  }
+
+  .admin-card:last-child { border-right: none; }
+
+  .admin-card:hover {
+    background: var(--admin-dim);
+  }
+
+  .admin-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: var(--admin-dim);
+    border: 1px solid var(--admin-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .admin-info { flex: 1; min-width: 0; }
+
+  .admin-name {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 2px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .admin-tag {
+    font-size: 9px;
+    padding: 1px 5px;
+    border-radius: 3px;
+    background: var(--admin-dim);
+    color: var(--admin-accent);
+    border: 1px solid var(--admin-border);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .admin-desc {
+    font-size: 12px;
     color: var(--text-muted);
-    font-size: 16px;
-    max-width: 500px;
-    margin: 0 auto;
+    line-height: 1.4;
   }
 
-  /* ── Section ── */
+  .admin-arrow {
+    color: var(--admin-accent);
+    font-size: 14px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .admin-card:hover .admin-arrow { opacity: 1; }
+
+  /* Section */
   .section {
     margin-bottom: 48px;
   }
@@ -148,7 +241,7 @@
   }
 
   .section-header h2 {
-    font-size: 16px;
+    font-size: 14px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 1px;
@@ -163,7 +256,13 @@
     color: var(--accent);
   }
 
-  /* ── App Grid ── */
+  .section-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  /* App Grid */
   .app-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -250,7 +349,38 @@
     font-weight: 500;
   }
 
-  /* ── User Apps ── */
+  /* User Apps */
+  .user-card {
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .user-card:hover {
+    background: var(--surface-hover);
+    border-color: #555;
+    border-style: solid;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .user-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: rgba(136, 136, 136, 0.15);
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
   .user-apps-empty {
     text-align: center;
     padding: 40px 20px;
@@ -266,33 +396,15 @@
     font-size: 13px;
   }
 
-  /* ── Loading ── */
-  .loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 40px;
-    color: var(--text-muted);
-  }
-
-  .spinner {
-    width: 16px;
-    height: 16px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  /* ── Responsive ── */
+  /* Responsive */
   @media (max-width: 640px) {
-    .topbar { padding: 12px 16px; }
+    .topbar { padding: 12px 16px; flex-wrap: wrap; gap: 8px; }
+    .topbar-stats { gap: 12px; font-size: 12px; }
     .container { padding: 24px 16px; }
-    .hero h1 { font-size: 24px; }
     .app-grid { grid-template-columns: 1fr; }
+    .admin-grid { grid-template-columns: 1fr; }
+    .admin-card { border-right: none; border-bottom: 1px solid var(--border); }
+    .admin-card:last-child { border-bottom: none; }
   }
 </style>
 </head>
@@ -306,24 +418,56 @@
       <span id="status-text">Connecting...</span>
     </div>
   </div>
-  <div class="topbar-right">
-    <span id="uptime-display"></span>
-    <span id="requests-display"></span>
-    <a href="/health" target="_blank">Health</a>
-    <a href="/status" target="_blank">Status API</a>
+  <div class="topbar-stats">
+    <div class="topbar-stat">
+      <span>Up</span>
+      <span class="topbar-stat-val" id="uptime-display">-</span>
+    </div>
+    <div class="topbar-stat">
+      <span>Reqs</span>
+      <span class="topbar-stat-val" id="requests-display">0</span>
+    </div>
+    <div class="topbar-stat">
+      <span>v</span>
+      <span class="topbar-stat-val" id="version-display">-</span>
+    </div>
   </div>
 </div>
 
 <div class="container">
-  <div class="hero">
-    <h1>Warden Launchpad</h1>
-    <p>Your apps run in the browser sandbox. Warden handles the keys.</p>
+
+  <!-- Admin Panel -->
+  <div class="admin-section">
+    <div class="admin-header">
+      <svg viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+      <h2>Admin</h2>
+    </div>
+    <div class="admin-grid">
+      <a class="admin-card" href="/admin/keys/">
+        <div class="admin-icon">&#x1F511;</div>
+        <div class="admin-info">
+          <div class="admin-name">Key Manager <span class="admin-tag">Admin</span></div>
+          <div class="admin-desc">Manage services, test keys, view access rules</div>
+        </div>
+        <span class="admin-arrow">&rarr;</span>
+      </a>
+      <a class="admin-card" href="/status" target="_blank">
+        <div class="admin-icon">&#x1F4CA;</div>
+        <div class="admin-info">
+          <div class="admin-name">Service Status <span class="admin-tag">Admin</span></div>
+          <div class="admin-desc">Raw status API &mdash; services, uptime, limits</div>
+        </div>
+        <span class="admin-arrow">&rarr;</span>
+      </a>
+    </div>
   </div>
 
+  <!-- Default Apps -->
   <div class="section">
     <div class="section-header">
-      <h2>Built-in Apps</h2>
-      <span class="section-count">4</span>
+      <h2>Default Apps</h2>
+      <span class="section-count">3</span>
+      <span class="section-label">Shipped with Warden</span>
     </div>
     <div class="app-grid">
       <a class="app-card" href="/apps/ai-chat/">
@@ -367,84 +511,67 @@
           <span class="app-launch">Launch &rarr;</span>
         </div>
       </a>
-
-      <a class="app-card" href="/apps/key-manager/">
-        <div class="app-card-top">
-          <div class="app-icon">&#x1F511;</div>
-          <div class="app-info">
-            <div class="app-name">Key Manager</div>
-          </div>
-        </div>
-        <div class="app-desc">View configured services, test key resolution, and manage your Warden API key sources.</div>
-        <div class="app-card-footer">
-          <span class="app-tag">Admin</span>
-          <span class="app-launch">Launch &rarr;</span>
-        </div>
-      </a>
     </div>
   </div>
 
+  <!-- User Apps -->
   <div class="section">
     <div class="section-header">
       <h2>Your Apps</h2>
       <span class="section-count" id="user-app-count">0</span>
+      <span class="section-label">User-installed</span>
     </div>
     <div class="app-grid" id="user-apps-grid">
       <div class="user-apps-empty" id="user-apps-empty">
-        <p style="margin-bottom:8px;">Drop HTML files into your Warden public directory to see them here.</p>
+        <p style="margin-bottom:8px;">Drop HTML files into your apps directory to see them here.</p>
         <p><code>~/.warden/sites/apps/</code></p>
-        <!-- NOTE: This section needs backend support via a /api/apps endpoint
-             that scans the public directory for user-dropped HTML files.
-             For now, this is a placeholder. The endpoint should return:
-             [{ "name": "My App", "path": "/apps/my-app/", "description": "..." }]
-        -->
       </div>
     </div>
   </div>
+
 </div>
 
 <script src="/client/warden-loader.js"></script>
 <script>
 (function() {
-  const WARDEN = 'http://127.0.0.1:7400';
 
   async function fetchStatus() {
     try {
-      const resp = await fetch(WARDEN + '/status');
+      var resp = await fetch('/status');
       if (!resp.ok) throw new Error('Not ok');
-      const data = await resp.json();
+      var data = await resp.json();
 
       document.getElementById('status-dot').classList.remove('offline');
       document.getElementById('status-badge').classList.remove('offline');
       document.getElementById('status-text').textContent =
         (data.services ? data.services.length : 0) + ' services';
-      document.getElementById('uptime-display').textContent = 'Up ' + (data.uptime || '');
-      document.getElementById('requests-display').textContent = (data.request_count || 0) + ' reqs';
+      document.getElementById('uptime-display').textContent = data.uptime || '-';
+      document.getElementById('requests-display').textContent = data.request_count || 0;
+      document.getElementById('version-display').textContent = data.version || '-';
     } catch (e) {
       document.getElementById('status-dot').classList.add('offline');
       document.getElementById('status-badge').classList.add('offline');
       document.getElementById('status-text').textContent = 'Offline';
-      document.getElementById('uptime-display').textContent = '';
-      document.getElementById('requests-display').textContent = '';
+      document.getElementById('uptime-display').textContent = '-';
+      document.getElementById('requests-display').textContent = '-';
+      document.getElementById('version-display').textContent = '-';
     }
   }
 
   async function fetchUserApps() {
-    // NOTE: Requires /api/apps backend endpoint. Placeholder for now.
-    // When implemented, this will scan ~/.warden/sites/apps/ for user HTML files.
     try {
-      const resp = await fetch(WARDEN + '/api/apps');
+      var resp = await fetch('/api/apps');
       if (!resp.ok) return;
-      const apps = await resp.json();
+      var apps = await resp.json();
       if (!apps.length) return;
 
       document.getElementById('user-apps-empty').style.display = 'none';
       document.getElementById('user-app-count').textContent = apps.length;
-      const grid = document.getElementById('user-apps-grid');
+      var grid = document.getElementById('user-apps-grid');
 
       apps.forEach(function(app) {
         var card = document.createElement('a');
-        card.className = 'app-card';
+        card.className = 'user-card';
         card.href = app.path;
         card.innerHTML =
           '<div class="app-card-top">' +
@@ -453,13 +580,13 @@
           '</div>' +
           '<div class="app-desc">' + escapeHtml(app.description || '') + '</div>' +
           '<div class="app-card-footer">' +
-            '<span class="app-tag">User</span>' +
+            '<span class="user-tag">User App</span>' +
             '<span class="app-launch">Launch &rarr;</span>' +
           '</div>';
         grid.appendChild(card);
       });
     } catch (e) {
-      // /api/apps not available yet — that's expected
+      // /api/apps not available yet
     }
   }
 
@@ -471,7 +598,6 @@
 
   fetchStatus();
   fetchUserApps();
-  // Refresh status every 30s
   setInterval(fetchStatus, 30000);
 })();
 </script>
