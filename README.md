@@ -106,22 +106,21 @@ This means a malicious or buggy app **cannot exfiltrate real credentials**, beca
 - It can't influence which key gets injected
 - It can't trick Warden into injecting keys for unauthorized destinations
 
-## Quick Start
+## Quick Install
 
 ```bash
-# Clone and build (requires Rust)
 git clone https://github.com/nwcnwc/warden-proxy.git
 cd warden-proxy
+./install.sh
+```
+
+This builds from source, installs the binary to `~/.local/bin/warden`, copies the launchpad and bundled apps to `~/.warden/sites/`, and sets up a systemd user service. Open **http://localhost:7400** when it's running.
+
+### Manual Build
+
+```bash
 cargo build --release
-
-# Or download a pre-built binary (coming soon)
-# curl -fsSL https://github.com/nwcnwc/warden-proxy/releases/latest/download/warden -o warden
-
-# Initialize config
 ./target/release/warden init
-
-# Edit ~/.warden/config.json with your key sources
-# Start the proxy
 ./target/release/warden start
 ```
 
@@ -218,25 +217,64 @@ Source fields:
 
 Legacy mode still works: use `"value": "Bearer ${OPENAI_API_KEY}"` for simple env var interpolation without a `source` block.
 
+## Launchpad & Bundled Apps
+
+Warden ships with a web-based launchpad at **http://localhost:7400** and four bundled apps:
+
+| App | Description |
+|-----|-------------|
+| **AI Chat** | Chat with OpenAI, Anthropic, or Google models. Streaming responses, markdown rendering. No API key needed — Warden injects it. |
+| **API Tester** | Postman-lite for Warden services. Pick a service, send requests, inspect responses with syntax highlighting. Request history saved in localStorage. |
+| **WebVM** | Full Debian Linux in the browser via CheerpX. Terminal via xterm.js. API calls route through Warden. |
+| **Key Manager** | View configured services, test key resolution, generate CLI commands to add new services. |
+
+Drop your own HTML files into `~/.warden/sites/apps/` and they'll appear in the "Your Apps" section of the launchpad.
+
+<!-- TODO: Add screenshots -->
+
+## Systemd Service
+
+Warden includes a systemd user service for running as a background daemon:
+
+```bash
+# The install script sets this up automatically, or manually:
+cp warden.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now warden
+
+# Management
+systemctl --user status warden      # Check status
+systemctl --user restart warden     # Restart after config changes
+journalctl --user -u warden -f      # View logs
+```
+
+The service reads environment variables from `~/.warden/env` if it exists.
+
 ## Architecture
 
 ```
 warden-proxy/
-├── bin/warden.js          # CLI entry point
 ├── src/
-│   ├── index.js           # HTTP server, request routing
-│   ├── proxy.js           # Core proxy: auth stripping, key injection, forwarding
-│   ├── cors.js            # CORS preflight and header handling
-│   ├── access.js          # Origin-based allowlist controller
-│   ├── vault.js           # API key storage and lookup
-│   ├── limiter.js         # Per-service rate limiting
-│   ├── logger.js          # Structured request logging
-│   └── client/
-│       ├── warden-sw.js   # Service Worker (runs in browser)
-│       └── warden-loader.js  # One-line script to activate SW
-├── test/
-│   ├── proxy.test.js      # Core proxy + access + rate limit tests
-│   └── security.test.js   # Auth stripping + destination-based injection tests
+│   ├── main.rs            # HTTP server, CLI commands, routing
+│   ├── proxy.rs           # Core proxy: auth stripping, key injection, streaming
+│   ├── config.rs          # Configuration loading and management
+│   ├── vault.rs           # Multi-source key resolution (7 providers)
+│   ├── access.rs          # Origin-based access control
+│   ├── limiter.rs         # Per-service rate limiting (rpm/rpd)
+│   ├── client_files.rs    # Embedded Service Worker serving
+│   └── websocket.rs       # WebSocket bridging
+├── client/
+│   ├── warden-loader.js   # One-line script to register Service Worker
+│   └── warden-sw.js       # Service Worker (intercepts fetch, strips auth, reroutes)
+├── public/                # Launchpad and bundled apps
+│   ├── index.html         # Launchpad — app launcher UI
+│   └── apps/
+│       ├── ai-chat/       # LLM chat interface
+│       ├── api-tester/    # HTTP request tester
+│       ├── webvm/         # Browser-based Debian VM
+│       └── key-manager/   # Key management UI
+├── install.sh             # Build + install + systemd setup
+├── warden.service         # Systemd user service file
 └── docs/
 ```
 
@@ -245,10 +283,11 @@ warden-proxy/
 | Component | What it does |
 |-----------|-------------|
 | **Service Worker** | Runs in the browser. Intercepts fetch() calls to registered APIs. Strips auth headers. Reroutes to Warden. Apps don't know it exists. |
-| **Proxy Server** | Runs on localhost. Strips auth again (defense in depth). Matches destination to registered service. Injects real key. Forwards request. |
-| **Key Vault** | Stores API keys locally. Supports env variable interpolation. Keys never leave the machine. |
+| **Proxy Server** | Runs on localhost. Strips auth again (defense in depth). Matches destination to registered service. Injects real key. Forwards request. Streams responses. |
+| **Key Vault** | Multi-source key resolution: 1Password, Bitwarden, OS Keyring, encrypted vault, env vars. Keys resolved at startup, never leave the machine. |
 | **Access Controller** | Origin-based allowlisting. Controls which browser origins can access which services. Wildcard support. |
 | **Rate Limiter** | Per-service request limits (per-minute, per-day). Prevents runaway costs from buggy or malicious apps. |
+| **WebSocket Bridge** | Bidirectional WebSocket proxying with auth injection for real-time APIs. |
 
 ## Use Cases
 
@@ -276,6 +315,7 @@ Read more: [The Browser Is Already a Virtual Machine](docs/browser-as-vm.md) *(c
 
 - [x] Core HTTP proxy with service routing
 - [x] API key vault with environment variable interpolation
+- [x] Multi-source key vault (1Password, Bitwarden, Keyring, encrypted, env)
 - [x] Origin-based access control with wildcard support
 - [x] Per-service rate limiting (rpm/rpd)
 - [x] CORS handling for browser origins
@@ -283,13 +323,13 @@ Read more: [The Browser Is Already a Virtual Machine](docs/browser-as-vm.md) *(c
 - [x] Defense-in-depth auth stripping (client + server)
 - [x] Request logging with structured output
 - [x] Security test suite
-- [ ] CLI commands: `add-key`, `remove-key`, `allow`, `deny`
-- [ ] Encrypted key storage at rest
-- [ ] WebSocket proxy support
-- [ ] Streaming response support (SSE)
+- [x] CLI commands: `add-key`, `remove-key`, `list-keys`, `test-key`
+- [x] WebSocket proxy support
+- [x] Streaming response support (SSE)
+- [x] Launchpad with bundled apps (AI Chat, API Tester, WebVM, Key Manager)
+- [x] systemd user service + install script
 - [ ] Device bridge plugin system
 - [ ] Browser extension (alternative to Service Worker)
-- [ ] Admin dashboard (view logs, manage keys, monitor usage)
 - [ ] WASI integration (for Wasm apps outside the browser)
 
 ## Contributing

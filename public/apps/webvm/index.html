@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<!--
+  WebVM for Warden — Debian Linux in the browser via CheerpX
+
+  IMPORTANT: The Rust server MUST set these headers for this page to work:
+    Cross-Origin-Embedder-Policy: require-corp
+    Cross-Origin-Opener-Policy: same-origin
+  These are required by SharedArrayBuffer, which CheerpX depends on.
+
+  Add these headers in the Rust server for /apps/webvm/* routes,
+  or configure them globally if all apps can tolerate COEP/COOP.
+
+  For networking inside the VM:
+  - Tailscale can be used for full network access (see https://tailscale.com/kb/1151/what-is-tailscale)
+  - HTTP API calls can be routed through Warden by configuring the VM's proxy settings
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebVM &mdash; Warden</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5/css/xterm.min.css">
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1a1a1a;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #00ff88;
+    --accent-dim: rgba(0, 255, 136, 0.1);
+    --accent-border: rgba(0, 255, 136, 0.2);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    z-index: 10;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .back-link:hover { color: var(--accent); }
+
+  .header h1 { font-size: 16px; font-weight: 600; }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 12px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+  }
+
+  .status-badge.loading {
+    color: #ffaa00;
+    background: rgba(255, 170, 0, 0.1);
+    border-color: rgba(255, 170, 0, 0.2);
+  }
+
+  .status-badge.error {
+    color: #ff4444;
+    background: rgba(255, 68, 68, 0.1);
+    border-color: rgba(255, 68, 68, 0.2);
+  }
+
+  /* ── Terminal ── */
+  .terminal-container {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+
+  #terminal {
+    width: 100%;
+    height: 100%;
+  }
+
+  .xterm { height: 100%; }
+  .xterm-viewport { overflow-y: auto !important; }
+
+  /* ── Loading Overlay ── */
+  .loading-overlay {
+    position: absolute;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 5;
+    transition: opacity 0.5s;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .loading-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-size: 16px;
+    color: var(--text-muted);
+  }
+
+  .loading-detail {
+    font-size: 13px;
+    color: var(--text-muted);
+    max-width: 400px;
+    text-align: center;
+    line-height: 1.5;
+  }
+
+  .error-text {
+    color: #ff4444;
+    font-size: 14px;
+    max-width: 500px;
+    text-align: center;
+    line-height: 1.6;
+  }
+
+  .error-text code {
+    background: var(--surface);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .info-bar {
+    padding: 8px 20px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .info-bar a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  .info-bar a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <a class="back-link" href="/">&larr; Launchpad</a>
+    <h1>WebVM</h1>
+  </div>
+  <div class="header-right">
+    <span class="status-badge loading" id="vm-status">Initializing...</span>
+  </div>
+</div>
+
+<div class="terminal-container">
+  <div class="loading-overlay" id="loading-overlay">
+    <div class="loading-spinner" id="loading-spinner"></div>
+    <div class="loading-text" id="loading-text">Loading CheerpX...</div>
+    <div class="loading-detail" id="loading-detail">
+      This will boot a full Debian Linux system in your browser. First load may take a moment while the disk image downloads.
+    </div>
+  </div>
+  <div id="terminal"></div>
+</div>
+
+<div class="info-bar">
+  <span>Debian Linux via CheerpX | HTTP API calls route through Warden</span>
+  <span>
+    <a href="https://github.com/leaningtech/webvm" target="_blank">WebVM on GitHub</a>
+    &middot;
+    <a href="https://tailscale.com" target="_blank">Tailscale for networking</a>
+  </span>
+</div>
+
+<script src="/client/warden-loader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm@5/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<script src="https://cxrtnc.leaningtech.com/1.2.2/cx.js"></script>
+<script>
+(function() {
+  var statusEl = document.getElementById('vm-status');
+  var loadingOverlay = document.getElementById('loading-overlay');
+  var loadingText = document.getElementById('loading-text');
+  var loadingDetail = document.getElementById('loading-detail');
+  var loadingSpinner = document.getElementById('loading-spinner');
+
+  function setStatus(text, state) {
+    statusEl.textContent = text;
+    statusEl.className = 'status-badge ' + (state || '');
+  }
+
+  function setLoading(text, detail) {
+    loadingText.textContent = text;
+    if (detail) loadingDetail.textContent = detail;
+  }
+
+  function showError(msg) {
+    setStatus('Error', 'error');
+    loadingSpinner.style.display = 'none';
+    loadingText.textContent = 'Failed to start';
+    loadingDetail.innerHTML = '';
+    var errDiv = document.createElement('div');
+    errDiv.className = 'error-text';
+    errDiv.innerHTML = msg;
+    loadingDetail.parentNode.insertBefore(errDiv, loadingDetail.nextSibling);
+  }
+
+  // Check for SharedArrayBuffer support (requires COEP/COOP headers)
+  if (typeof SharedArrayBuffer === 'undefined') {
+    showError(
+      'SharedArrayBuffer is not available.<br><br>' +
+      'The Warden server needs to send these headers for this page:<br>' +
+      '<code>Cross-Origin-Embedder-Policy: require-corp</code><br>' +
+      '<code>Cross-Origin-Opener-Policy: same-origin</code><br><br>' +
+      'Add COEP/COOP header support to the Rust server for the /apps/webvm/ route.'
+    );
+    return;
+  }
+
+  // Set up xterm.js terminal
+  var term = new Terminal({
+    cursorBlink: true,
+    theme: {
+      background: '#0a0a0a',
+      foreground: '#e0e0e0',
+      cursor: '#00ff88',
+      cursorAccent: '#0a0a0a',
+      selectionBackground: 'rgba(0, 255, 136, 0.2)',
+      black: '#0a0a0a',
+      red: '#ff4444',
+      green: '#00ff88',
+      yellow: '#ffaa00',
+      blue: '#60a5fa',
+      magenta: '#f472b6',
+      cyan: '#22d3ee',
+      white: '#e0e0e0',
+      brightBlack: '#555',
+      brightRed: '#ff6b6b',
+      brightGreen: '#6eff9e',
+      brightYellow: '#ffd700',
+      brightBlue: '#93c5fd',
+      brightMagenta: '#f9a8d4',
+      brightCyan: '#67e8f9',
+      brightWhite: '#ffffff'
+    },
+    fontFamily: "'SF Mono', 'Fira Code', 'Cascadia Code', Menlo, monospace",
+    fontSize: 14,
+    lineHeight: 1.2,
+    scrollback: 10000,
+    convertEol: true
+  });
+
+  var fitAddon = new FitAddon.FitAddon();
+  term.loadAddon(fitAddon);
+  term.open(document.getElementById('terminal'));
+  fitAddon.fit();
+
+  window.addEventListener('resize', function() { fitAddon.fit(); });
+
+  // Boot CheerpX
+  async function bootVM() {
+    try {
+      setLoading('Creating CheerpX instance...', 'Setting up the virtual machine runtime...');
+      setStatus('Booting...', 'loading');
+
+      var cx = await CheerpX.Linux.create({
+        mounts: [
+          { type: 'ext2', path: '/', url: 'wss://disks.webvm.io/debian_large_20230522_5044875331.ext2' },
+          { type: 'devs', path: '/dev' },
+          { type: 'proc', path: '/proc' },
+          { type: 'tmp', path: '/tmp' }
+        ]
+      });
+
+      setLoading('Starting shell...', 'Connecting terminal to Debian Linux...');
+
+      cx.setConsole(term);
+
+      // Hide loading overlay
+      loadingOverlay.classList.add('hidden');
+      setStatus('Running', '');
+
+      // Run bash shell
+      await cx.run('/bin/bash', ['--login'], {
+        env: [
+          'HOME=/root',
+          'USER=root',
+          'SHELL=/bin/bash',
+          'TERM=xterm-256color',
+          'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
+          'LANG=en_US.UTF-8'
+        ],
+        cwd: '/root'
+      });
+
+    } catch(e) {
+      console.error('CheerpX boot error:', e);
+      showError(
+        'CheerpX failed to initialize:<br><code>' + escapeHtml(e.message || String(e)) + '</code><br><br>' +
+        'This may be caused by missing COEP/COOP headers, or a network issue loading the disk image.'
+      );
+    }
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  bootVM();
+})();
+</script>
+</body>
+</html>

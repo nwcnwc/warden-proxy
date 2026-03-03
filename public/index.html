@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Warden Launchpad</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1a1a1a;
+    --surface-hover: #242424;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #00ff88;
+    --accent-dim: rgba(0, 255, 136, 0.1);
+    --accent-border: rgba(0, 255, 136, 0.2);
+    --danger: #ff4444;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  /* ── Top Bar ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .topbar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .topbar-logo {
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+
+  .topbar-logo span { color: var(--accent); }
+
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 13px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .status-dot.offline {
+    background: var(--danger);
+    animation: none;
+  }
+
+  .status-badge.offline {
+    background: rgba(255, 68, 68, 0.1);
+    border-color: rgba(255, 68, 68, 0.2);
+    color: var(--danger);
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .topbar-right a {
+    color: var(--text-muted);
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+
+  .topbar-right a:hover { color: var(--accent); }
+
+  /* ── Main Content ── */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 48px 32px;
+  }
+
+  .hero {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+
+  .hero h1 {
+    font-size: 32px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+
+  .hero p {
+    color: var(--text-muted);
+    font-size: 16px;
+    max-width: 500px;
+    margin: 0 auto;
+  }
+
+  /* ── Section ── */
+  .section {
+    margin-bottom: 48px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-header h2 {
+    font-size: 16px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+  }
+
+  .section-count {
+    font-size: 12px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  /* ── App Grid ── */
+  .app-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .app-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .app-card:hover {
+    background: var(--surface-hover);
+    border-color: var(--accent-border);
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+
+  .app-card-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 12px;
+  }
+
+  .app-icon {
+    font-size: 36px;
+    line-height: 1;
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--accent-dim);
+    border-radius: 10px;
+  }
+
+  .app-info { flex: 1; min-width: 0; }
+
+  .app-name {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .app-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.5;
+    flex: 1;
+  }
+
+  .app-card-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .app-tag {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .app-launch {
+    font-size: 13px;
+    color: var(--accent);
+    font-weight: 500;
+  }
+
+  /* ── User Apps ── */
+  .user-apps-empty {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+  }
+
+  .user-apps-empty code {
+    background: var(--surface);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 13px;
+  }
+
+  /* ── Loading ── */
+  .loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  .spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .topbar { padding: 12px 16px; }
+    .container { padding: 24px 16px; }
+    .hero h1 { font-size: 24px; }
+    .app-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-logo"><span>&#9679;</span> Warden</div>
+    <div class="status-badge" id="status-badge">
+      <div class="status-dot" id="status-dot"></div>
+      <span id="status-text">Connecting...</span>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <span id="uptime-display"></span>
+    <span id="requests-display"></span>
+    <a href="/health" target="_blank">Health</a>
+    <a href="/status" target="_blank">Status API</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="hero">
+    <h1>Warden Launchpad</h1>
+    <p>Your apps run in the browser sandbox. Warden handles the keys.</p>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Built-in Apps</h2>
+      <span class="section-count">4</span>
+    </div>
+    <div class="app-grid">
+      <a class="app-card" href="/apps/ai-chat/">
+        <div class="app-card-top">
+          <div class="app-icon">&#x1F4AC;</div>
+          <div class="app-info">
+            <div class="app-name">AI Chat</div>
+          </div>
+        </div>
+        <div class="app-desc">Chat with OpenAI, Anthropic, or Google models. Streaming responses, markdown rendering. No API key needed.</div>
+        <div class="app-card-footer">
+          <span class="app-tag">LLM</span>
+          <span class="app-launch">Launch &rarr;</span>
+        </div>
+      </a>
+
+      <a class="app-card" href="/apps/api-tester/">
+        <div class="app-card-top">
+          <div class="app-icon">&#x1F9EA;</div>
+          <div class="app-info">
+            <div class="app-name">API Tester</div>
+          </div>
+        </div>
+        <div class="app-desc">Postman-lite for Warden services. Pick a service, send requests, inspect responses with syntax highlighting.</div>
+        <div class="app-card-footer">
+          <span class="app-tag">Tools</span>
+          <span class="app-launch">Launch &rarr;</span>
+        </div>
+      </a>
+
+      <a class="app-card" href="/apps/webvm/">
+        <div class="app-card-top">
+          <div class="app-icon">&#x1F5A5;</div>
+          <div class="app-info">
+            <div class="app-name">WebVM</div>
+          </div>
+        </div>
+        <div class="app-desc">Full Debian Linux running in your browser via CheerpX. Terminal access with xterm.js. API calls go through Warden.</div>
+        <div class="app-card-footer">
+          <span class="app-tag">VM</span>
+          <span class="app-launch">Launch &rarr;</span>
+        </div>
+      </a>
+
+      <a class="app-card" href="/apps/key-manager/">
+        <div class="app-card-top">
+          <div class="app-icon">&#x1F511;</div>
+          <div class="app-info">
+            <div class="app-name">Key Manager</div>
+          </div>
+        </div>
+        <div class="app-desc">View configured services, test key resolution, and manage your Warden API key sources.</div>
+        <div class="app-card-footer">
+          <span class="app-tag">Admin</span>
+          <span class="app-launch">Launch &rarr;</span>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-header">
+      <h2>Your Apps</h2>
+      <span class="section-count" id="user-app-count">0</span>
+    </div>
+    <div class="app-grid" id="user-apps-grid">
+      <div class="user-apps-empty" id="user-apps-empty">
+        <p style="margin-bottom:8px;">Drop HTML files into your Warden public directory to see them here.</p>
+        <p><code>~/.warden/sites/apps/</code></p>
+        <!-- NOTE: This section needs backend support via a /api/apps endpoint
+             that scans the public directory for user-dropped HTML files.
+             For now, this is a placeholder. The endpoint should return:
+             [{ "name": "My App", "path": "/apps/my-app/", "description": "..." }]
+        -->
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/client/warden-loader.js"></script>
+<script>
+(function() {
+  const WARDEN = 'http://127.0.0.1:7400';
+
+  async function fetchStatus() {
+    try {
+      const resp = await fetch(WARDEN + '/status');
+      if (!resp.ok) throw new Error('Not ok');
+      const data = await resp.json();
+
+      document.getElementById('status-dot').classList.remove('offline');
+      document.getElementById('status-badge').classList.remove('offline');
+      document.getElementById('status-text').textContent =
+        (data.services ? data.services.length : 0) + ' services';
+      document.getElementById('uptime-display').textContent = 'Up ' + (data.uptime || '');
+      document.getElementById('requests-display').textContent = (data.request_count || 0) + ' reqs';
+    } catch (e) {
+      document.getElementById('status-dot').classList.add('offline');
+      document.getElementById('status-badge').classList.add('offline');
+      document.getElementById('status-text').textContent = 'Offline';
+      document.getElementById('uptime-display').textContent = '';
+      document.getElementById('requests-display').textContent = '';
+    }
+  }
+
+  async function fetchUserApps() {
+    // NOTE: Requires /api/apps backend endpoint. Placeholder for now.
+    // When implemented, this will scan ~/.warden/sites/apps/ for user HTML files.
+    try {
+      const resp = await fetch(WARDEN + '/api/apps');
+      if (!resp.ok) return;
+      const apps = await resp.json();
+      if (!apps.length) return;
+
+      document.getElementById('user-apps-empty').style.display = 'none';
+      document.getElementById('user-app-count').textContent = apps.length;
+      const grid = document.getElementById('user-apps-grid');
+
+      apps.forEach(function(app) {
+        var card = document.createElement('a');
+        card.className = 'app-card';
+        card.href = app.path;
+        card.innerHTML =
+          '<div class="app-card-top">' +
+            '<div class="app-icon">' + (app.icon || '\u{1F4C4}') + '</div>' +
+            '<div class="app-info"><div class="app-name">' + escapeHtml(app.name) + '</div></div>' +
+          '</div>' +
+          '<div class="app-desc">' + escapeHtml(app.description || '') + '</div>' +
+          '<div class="app-card-footer">' +
+            '<span class="app-tag">User</span>' +
+            '<span class="app-launch">Launch &rarr;</span>' +
+          '</div>';
+        grid.appendChild(card);
+      });
+    } catch (e) {
+      // /api/apps not available yet — that's expected
+    }
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  fetchStatus();
+  fetchUserApps();
+  // Refresh status every 30s
+  setInterval(fetchStatus, 30000);
+})();
+</script>
+</body>
+</html>

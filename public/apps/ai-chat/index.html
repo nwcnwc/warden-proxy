@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Chat &mdash; Warden</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1a1a1a;
+    --surface-hover: #242424;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #00ff88;
+    --accent-dim: rgba(0, 255, 136, 0.1);
+    --accent-border: rgba(0, 255, 136, 0.2);
+    --user-bg: #1e293b;
+    --radius: 12px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .back-link:hover { color: var(--accent); }
+
+  .header h1 {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  select, button {
+    font-family: inherit;
+    font-size: 13px;
+  }
+
+  .provider-select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  .model-select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+
+  .clear-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .clear-btn:hover {
+    border-color: var(--accent-border);
+    color: var(--text);
+  }
+
+  /* ── Messages ── */
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .message {
+    max-width: 780px;
+    width: 100%;
+    margin: 0 auto;
+    line-height: 1.6;
+  }
+
+  .message-role {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+    color: var(--text-muted);
+  }
+
+  .message-role.user { color: #60a5fa; }
+  .message-role.assistant { color: var(--accent); }
+
+  .message-content {
+    font-size: 14px;
+    line-height: 1.7;
+    padding: 12px 16px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .message.user .message-content {
+    background: var(--user-bg);
+    border-color: rgba(96, 165, 250, 0.2);
+  }
+
+  .message-content p { margin-bottom: 8px; }
+  .message-content p:last-child { margin-bottom: 0; }
+
+  .message-content pre {
+    background: #0d0d0d;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+
+  .message-content code {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px;
+  }
+
+  .message-content :not(pre) > code {
+    background: rgba(255,255,255,0.06);
+    padding: 2px 5px;
+    border-radius: 3px;
+  }
+
+  .message-content ul, .message-content ol {
+    margin: 8px 0;
+    padding-left: 24px;
+  }
+
+  .message-content li { margin-bottom: 4px; }
+
+  .message-content h1, .message-content h2, .message-content h3 {
+    margin: 12px 0 6px;
+  }
+
+  .message-content strong { color: #fff; }
+
+  .streaming-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 16px;
+    background: var(--accent);
+    margin-left: 2px;
+    animation: blink 1s step-end infinite;
+    vertical-align: text-bottom;
+  }
+
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .welcome {
+    text-align: center;
+    color: var(--text-muted);
+    margin: auto;
+    padding: 40px;
+  }
+
+  .welcome h2 {
+    font-size: 20px;
+    margin-bottom: 8px;
+    color: var(--text);
+  }
+
+  .error-msg {
+    background: rgba(255, 68, 68, 0.1);
+    border: 1px solid rgba(255, 68, 68, 0.3);
+    color: #ff6b6b;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    max-width: 780px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ── Input ── */
+  .input-area {
+    padding: 16px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .input-row {
+    max-width: 780px;
+    margin: 0 auto;
+    display: flex;
+    gap: 10px;
+  }
+
+  .input-row textarea {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: none;
+    min-height: 44px;
+    max-height: 200px;
+    line-height: 1.5;
+  }
+
+  .input-row textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .send-btn {
+    background: var(--accent);
+    color: #0a0a0a;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+    align-self: flex-end;
+  }
+
+  .send-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .send-btn:not(:disabled):hover { opacity: 0.85; }
+
+  @media (max-width: 640px) {
+    .header { flex-wrap: wrap; gap: 8px; }
+    .messages { padding: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <a class="back-link" href="/">&larr; Launchpad</a>
+    <h1>AI Chat</h1>
+  </div>
+  <div class="header-right">
+    <select class="provider-select" id="provider">
+      <option value="">Loading services...</option>
+    </select>
+    <select class="model-select" id="model">
+      <option value="">Select model</option>
+    </select>
+    <button class="clear-btn" onclick="clearChat()">Clear</button>
+  </div>
+</div>
+
+<div class="messages" id="messages">
+  <div class="welcome">
+    <h2>AI Chat</h2>
+    <p>Select a provider and start chatting. No API key needed &mdash; Warden handles it.</p>
+  </div>
+</div>
+
+<div class="input-area">
+  <div class="input-row">
+    <textarea id="input" placeholder="Type a message... (Enter to send, Shift+Enter for newline)" rows="1"></textarea>
+    <button class="send-btn" id="send-btn" onclick="sendMessage()">Send</button>
+  </div>
+</div>
+
+<script src="/client/warden-loader.js"></script>
+<script>
+(function() {
+  const PROXY = '/proxy';
+  let messages = [];
+  let streaming = false;
+  let availableServices = [];
+
+  const PROVIDERS = {
+    openai: {
+      name: 'OpenAI',
+      models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'],
+      chatPath: '/v1/chat/completions',
+      buildRequest(model, msgs) {
+        return {
+          model: model,
+          messages: msgs,
+          stream: true
+        };
+      },
+      parseSSE(line) {
+        if (line === '[DONE]') return { done: true };
+        try {
+          const j = JSON.parse(line);
+          const delta = j.choices && j.choices[0] && j.choices[0].delta;
+          if (delta && delta.content) return { content: delta.content };
+          if (j.choices && j.choices[0] && j.choices[0].finish_reason) return { done: true };
+        } catch(e) {}
+        return {};
+      }
+    },
+    anthropic: {
+      name: 'Anthropic',
+      models: ['claude-sonnet-4-6-20250514', 'claude-haiku-4-5-20251001', 'claude-3-5-sonnet-20241022'],
+      chatPath: '/v1/messages',
+      extraHeaders: { 'anthropic-version': '2023-06-01' },
+      buildRequest(model, msgs) {
+        // Extract system message if present
+        let system = undefined;
+        const filtered = [];
+        msgs.forEach(function(m) {
+          if (m.role === 'system') system = m.content;
+          else filtered.push(m);
+        });
+        return {
+          model: model,
+          max_tokens: 4096,
+          stream: true,
+          system: system,
+          messages: filtered
+        };
+      },
+      parseSSE(line) {
+        try {
+          const j = JSON.parse(line);
+          if (j.type === 'content_block_delta' && j.delta && j.delta.text) {
+            return { content: j.delta.text };
+          }
+          if (j.type === 'message_stop') return { done: true };
+        } catch(e) {}
+        return {};
+      }
+    },
+    google: {
+      name: 'Google',
+      models: ['gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
+      chatPath: function(model) {
+        return '/v1beta/models/' + model + ':streamGenerateContent?alt=sse';
+      },
+      buildRequest(model, msgs) {
+        const contents = msgs.filter(function(m) { return m.role !== 'system'; }).map(function(m) {
+          return {
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+          };
+        });
+        return { contents: contents };
+      },
+      parseSSE(line) {
+        try {
+          const j = JSON.parse(line);
+          if (j.candidates && j.candidates[0]) {
+            const parts = j.candidates[0].content && j.candidates[0].content.parts;
+            if (parts && parts[0] && parts[0].text) return { content: parts[0].text };
+            if (j.candidates[0].finishReason) return { done: true };
+          }
+        } catch(e) {}
+        return {};
+      }
+    }
+  };
+
+  // Load available services from /routes
+  async function loadServices() {
+    try {
+      const resp = await fetch('/routes');
+      const routes = await resp.json();
+      // routes is { base_url: service_name }
+      availableServices = Object.values(routes);
+    } catch(e) {
+      availableServices = [];
+    }
+
+    const select = document.getElementById('provider');
+    select.innerHTML = '';
+
+    let found = false;
+    Object.keys(PROVIDERS).forEach(function(key) {
+      if (availableServices.indexOf(key) !== -1) {
+        found = true;
+        var opt = document.createElement('option');
+        opt.value = key;
+        opt.textContent = PROVIDERS[key].name;
+        select.appendChild(opt);
+      }
+    });
+
+    if (!found) {
+      var opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No services configured';
+      select.appendChild(opt);
+      // Also add all as fallback for when proxy is being set up
+      Object.keys(PROVIDERS).forEach(function(key) {
+        var o = document.createElement('option');
+        o.value = key;
+        o.textContent = PROVIDERS[key].name + ' (not configured)';
+        select.appendChild(o);
+      });
+    }
+
+    updateModels();
+  }
+
+  function updateModels() {
+    var provider = document.getElementById('provider').value;
+    var select = document.getElementById('model');
+    select.innerHTML = '';
+
+    if (provider && PROVIDERS[provider]) {
+      PROVIDERS[provider].models.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        select.appendChild(opt);
+      });
+    }
+  }
+
+  document.getElementById('provider').addEventListener('change', updateModels);
+
+  // Simple markdown rendering
+  function renderMarkdown(text) {
+    // Escape HTML
+    var html = text
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    // Code blocks (``` ... ```)
+    html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, code) {
+      return '<pre><code>' + code.trim() + '</code></pre>';
+    });
+
+    // Inline code
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+
+    // Bold
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+    // Italic
+    html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+
+    // Headers
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+
+    // Unordered lists
+    html = html.replace(/^[\-\*] (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+
+    // Paragraphs (double newlines)
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = '<p>' + html + '</p>';
+
+    // Clean up empty paragraphs
+    html = html.replace(/<p>\s*<\/p>/g, '');
+    html = html.replace(/<p>(<h[1-3]>)/g, '$1');
+    html = html.replace(/(<\/h[1-3]>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<pre>)/g, '$1');
+    html = html.replace(/(<\/pre>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+
+    return html;
+  }
+
+  function addMessageToUI(role, content, isStreaming) {
+    var container = document.getElementById('messages');
+    // Remove welcome message
+    var welcome = container.querySelector('.welcome');
+    if (welcome) welcome.remove();
+
+    var div = document.createElement('div');
+    div.className = 'message ' + role;
+    div.innerHTML =
+      '<div class="message-role ' + role + '">' + role + '</div>' +
+      '<div class="message-content">' + renderMarkdown(content) +
+      (isStreaming ? '<span class="streaming-cursor"></span>' : '') +
+      '</div>';
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+  }
+
+  function updateStreamingMessage(el, content, done) {
+    var contentEl = el.querySelector('.message-content');
+    contentEl.innerHTML = renderMarkdown(content) +
+      (done ? '' : '<span class="streaming-cursor"></span>');
+    var container = document.getElementById('messages');
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function showError(msg) {
+    var container = document.getElementById('messages');
+    var div = document.createElement('div');
+    div.className = 'error-msg';
+    div.textContent = msg;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  window.clearChat = function() {
+    messages = [];
+    var container = document.getElementById('messages');
+    container.innerHTML =
+      '<div class="welcome"><h2>AI Chat</h2>' +
+      '<p>Select a provider and start chatting. No API key needed &mdash; Warden handles it.</p></div>';
+  };
+
+  window.sendMessage = async function() {
+    if (streaming) return;
+
+    var input = document.getElementById('input');
+    var text = input.value.trim();
+    if (!text) return;
+
+    var provider = document.getElementById('provider').value;
+    var model = document.getElementById('model').value;
+    if (!provider || !PROVIDERS[provider]) {
+      showError('Please select a provider.');
+      return;
+    }
+    if (!model) {
+      showError('Please select a model.');
+      return;
+    }
+
+    input.value = '';
+    input.style.height = 'auto';
+
+    messages.push({ role: 'user', content: text });
+    addMessageToUI('user', text, false);
+
+    var prov = PROVIDERS[provider];
+    var chatPath = typeof prov.chatPath === 'function' ? prov.chatPath(model) : prov.chatPath;
+    var url = PROXY + '/' + provider + chatPath;
+    var body = prov.buildRequest(model, messages);
+
+    var headers = { 'Content-Type': 'application/json' };
+    if (prov.extraHeaders) {
+      Object.keys(prov.extraHeaders).forEach(function(k) {
+        headers[k] = prov.extraHeaders[k];
+      });
+    }
+
+    streaming = true;
+    document.getElementById('send-btn').disabled = true;
+
+    var assistantContent = '';
+    var msgEl = addMessageToUI('assistant', '', true);
+
+    try {
+      var resp = await fetch(url, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(body)
+      });
+
+      if (!resp.ok) {
+        var errText = await resp.text();
+        throw new Error('HTTP ' + resp.status + ': ' + errText.substring(0, 200));
+      }
+
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder();
+      var buffer = '';
+
+      while (true) {
+        var result = await reader.read();
+        if (result.done) break;
+
+        buffer += decoder.decode(result.value, { stream: true });
+        var lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete line
+
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i].trim();
+          if (!line || line.startsWith(':')) continue;
+          if (line.startsWith('data: ')) line = line.substring(6);
+          if (!line) continue;
+
+          var parsed = prov.parseSSE(line);
+          if (parsed.done) break;
+          if (parsed.content) {
+            assistantContent += parsed.content;
+            updateStreamingMessage(msgEl, assistantContent, false);
+          }
+        }
+      }
+
+      updateStreamingMessage(msgEl, assistantContent, true);
+      messages.push({ role: 'assistant', content: assistantContent });
+
+    } catch(e) {
+      updateStreamingMessage(msgEl, assistantContent || '(no response)', true);
+      showError('Error: ' + e.message);
+    }
+
+    streaming = false;
+    document.getElementById('send-btn').disabled = false;
+    input.focus();
+  };
+
+  // Auto-resize textarea
+  var textarea = document.getElementById('input');
+  textarea.addEventListener('input', function() {
+    this.style.height = 'auto';
+    this.style.height = Math.min(this.scrollHeight, 200) + 'px';
+  });
+
+  textarea.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  loadServices();
+})();
+</script>
+</body>
+</html>

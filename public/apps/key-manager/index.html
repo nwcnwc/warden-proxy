@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Key Manager &mdash; Warden</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1a1a1a;
+    --surface-hover: #242424;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #00ff88;
+    --accent-dim: rgba(0, 255, 136, 0.1);
+    --accent-border: rgba(0, 255, 136, 0.2);
+    --danger: #ff4444;
+    --success: #00ff88;
+    --warn: #ffaa00;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .back-link:hover { color: var(--accent); }
+
+  .header h1 { font-size: 16px; font-weight: 600; }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .refresh-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .refresh-btn:hover { border-color: var(--accent-border); color: var(--text); }
+
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 32px 20px;
+  }
+
+  /* ── Status Overview ── */
+  .overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--accent);
+  }
+
+  .stat-value.text { font-size: 16px; }
+
+  /* ── Section ── */
+  .section {
+    margin-bottom: 32px;
+  }
+
+  .section h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* ── Service List ── */
+  .service-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .service-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: border-color 0.2s;
+  }
+
+  .service-card:hover {
+    border-color: var(--accent-border);
+  }
+
+  .service-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    background: var(--accent-dim);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    flex-shrink: 0;
+  }
+
+  .service-info { flex: 1; min-width: 0; }
+
+  .service-name {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+
+  .service-url {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'SF Mono', monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .service-meta {
+    display: flex;
+    gap: 8px;
+    margin-top: 4px;
+  }
+
+  .meta-tag {
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: var(--accent-dim);
+    color: var(--accent);
+  }
+
+  .service-actions {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+
+  .test-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+
+  .test-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  .test-btn.testing {
+    border-color: var(--warn);
+    color: var(--warn);
+    cursor: not-allowed;
+  }
+
+  .test-btn.success {
+    border-color: var(--success);
+    color: var(--success);
+    background: rgba(0, 255, 136, 0.05);
+  }
+
+  .test-btn.fail {
+    border-color: var(--danger);
+    color: var(--danger);
+    background: rgba(255, 68, 68, 0.05);
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  /* ── Add Service Form ── */
+  .add-form {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group.full { grid-column: 1 / -1; }
+
+  .form-group label {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .form-group input, .form-group select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: inherit;
+    font-size: 13px;
+  }
+
+  .form-group input:focus, .form-group select:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .form-group input::placeholder { color: #555; }
+
+  .form-actions {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .form-actions button {
+    background: var(--accent);
+    color: #0a0a0a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .form-actions button:hover { opacity: 0.85; }
+
+  .cli-output {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    margin-top: 12px;
+    display: none;
+  }
+
+  .cli-output.visible { display: block; }
+
+  /* ── Access Rules ── */
+  .rules-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .rules-table th {
+    text-align: left;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+  }
+
+  .rules-table td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .rules-table td code {
+    font-family: 'SF Mono', monospace;
+    font-size: 12px;
+    background: var(--accent-dim);
+    padding: 2px 6px;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 640px) {
+    .form-grid { grid-template-columns: 1fr; }
+    .overview { grid-template-columns: 1fr 1fr; }
+    .service-card { flex-wrap: wrap; }
+    .service-actions { width: 100%; justify-content: flex-end; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <a class="back-link" href="/">&larr; Launchpad</a>
+    <h1>Key Manager</h1>
+  </div>
+  <div class="header-right">
+    <button class="refresh-btn" onclick="loadAll()">Refresh</button>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="overview" id="overview">
+    <div class="stat-card">
+      <div class="stat-label">Status</div>
+      <div class="stat-value text" id="ov-status">...</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Services</div>
+      <div class="stat-value" id="ov-services">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Uptime</div>
+      <div class="stat-value text" id="ov-uptime">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Requests</div>
+      <div class="stat-value" id="ov-requests">-</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Configured Services</h2>
+    <div class="service-list" id="service-list">
+      <div class="empty-state">Loading services...</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Access Rules</h2>
+    <div id="access-rules">
+      <div class="empty-state">Loading...</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Add New Service</h2>
+    <div class="add-form">
+      <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+        Generate the CLI command to add a new service. Run this in your terminal.
+      </p>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Service Name</label>
+          <input id="f-name" type="text" placeholder="e.g., openai">
+        </div>
+        <div class="form-group">
+          <label>Base URL</label>
+          <input id="f-url" type="text" placeholder="e.g., https://api.openai.com">
+        </div>
+        <div class="form-group">
+          <label>Auth Header</label>
+          <input id="f-header" type="text" value="Authorization" placeholder="Authorization">
+        </div>
+        <div class="form-group">
+          <label>Key Source</label>
+          <select id="f-source">
+            <option value="env">Environment Variable</option>
+            <option value="keyring">OS Keyring</option>
+            <option value="1password">1Password</option>
+            <option value="bitwarden">Bitwarden</option>
+            <option value="encrypted">Encrypted Vault</option>
+            <option value="inline">Inline (dev only)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Reference</label>
+          <input id="f-ref" type="text" placeholder="e.g., OPENAI_API_KEY or op://...">
+        </div>
+        <div class="form-group">
+          <label>Prefix (optional)</label>
+          <input id="f-prefix" type="text" placeholder='e.g., Bearer '>
+        </div>
+      </div>
+      <div class="form-actions">
+        <button onclick="generateCommand()">Generate Command</button>
+      </div>
+      <div class="cli-output" id="cli-output"></div>
+    </div>
+  </div>
+</div>
+
+<script src="/client/warden-loader.js"></script>
+<script>
+(function() {
+  var statusData = null;
+  var routesData = null;
+
+  async function loadAll() {
+    await Promise.all([loadStatus(), loadRoutes()]);
+    renderServices();
+    renderRules();
+  }
+
+  async function loadStatus() {
+    try {
+      var resp = await fetch('/status');
+      statusData = await resp.json();
+
+      document.getElementById('ov-status').textContent = statusData.status === 'ok' ? 'Running' : statusData.status;
+      document.getElementById('ov-status').style.color = statusData.status === 'ok' ? 'var(--accent)' : 'var(--danger)';
+      document.getElementById('ov-services').textContent = (statusData.services || []).length;
+      document.getElementById('ov-uptime').textContent = statusData.uptime || '-';
+      document.getElementById('ov-requests').textContent = statusData.request_count || 0;
+    } catch(e) {
+      document.getElementById('ov-status').textContent = 'Offline';
+      document.getElementById('ov-status').style.color = 'var(--danger)';
+    }
+  }
+
+  async function loadRoutes() {
+    try {
+      var resp = await fetch('/routes');
+      routesData = await resp.json();
+    } catch(e) {
+      routesData = {};
+    }
+  }
+
+  function renderServices() {
+    var list = document.getElementById('service-list');
+    var services = statusData ? (statusData.services || []) : [];
+
+    if (services.length === 0) {
+      list.innerHTML = '<div class="empty-state">No services configured. Add one below.</div>';
+      return;
+    }
+
+    // Build reverse map: service -> base_url
+    var urlMap = {};
+    if (routesData) {
+      Object.keys(routesData).forEach(function(url) {
+        urlMap[routesData[url]] = url;
+      });
+    }
+
+    var serviceIcons = {
+      openai: '\u{1F916}',
+      anthropic: '\u{1F9E0}',
+      google: '\u{1F50D}',
+      mistral: '\u{1F32C}',
+      cohere: '\u{1F517}'
+    };
+
+    list.innerHTML = '';
+    services.forEach(function(name) {
+      var url = urlMap[name] || 'Unknown URL';
+      var icon = serviceIcons[name] || '\u{1F310}';
+
+      var card = document.createElement('div');
+      card.className = 'service-card';
+      card.innerHTML =
+        '<div class="service-icon">' + icon + '</div>' +
+        '<div class="service-info">' +
+          '<div class="service-name">' + escapeHtml(name) + '</div>' +
+          '<div class="service-url">' + escapeHtml(url) + '</div>' +
+          '<div class="service-meta">' +
+            '<span class="meta-tag">proxy/' + escapeHtml(name) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="service-actions">' +
+          '<button class="test-btn" data-service="' + escapeHtml(name) + '" onclick="testKey(this)">Test Key</button>' +
+        '</div>';
+      list.appendChild(card);
+    });
+  }
+
+  function renderRules() {
+    var container = document.getElementById('access-rules');
+    var rules = statusData ? (statusData.access || []) : [];
+
+    if (rules.length === 0) {
+      container.innerHTML = '<div class="empty-state">No access rules configured (all origins allowed in dev mode).</div>';
+      return;
+    }
+
+    var html = '<table class="rules-table"><thead><tr><th>Origin</th><th>Allowed Services</th></tr></thead><tbody>';
+    rules.forEach(function(rule) {
+      var origin = rule.origin || '*';
+      var services = rule.allow || [];
+      html += '<tr><td><code>' + escapeHtml(origin) + '</code></td><td>' +
+        services.map(function(s) { return '<code>' + escapeHtml(s) + '</code>'; }).join(' ') +
+        '</td></tr>';
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  }
+
+  window.testKey = async function(btn) {
+    var service = btn.dataset.service;
+    btn.textContent = 'Testing...';
+    btn.className = 'test-btn testing';
+
+    try {
+      // Try a HEAD request to the proxy endpoint
+      var resp = await fetch('/proxy/' + encodeURIComponent(service) + '/', {
+        method: 'HEAD'
+      });
+
+      // If we get anything back (even an error from the upstream API),
+      // it means the key resolved and was injected
+      if (resp.status >= 200 && resp.status < 500) {
+        btn.textContent = 'Key OK';
+        btn.className = 'test-btn success';
+      } else {
+        btn.textContent = 'Check Key';
+        btn.className = 'test-btn fail';
+      }
+    } catch(e) {
+      btn.textContent = 'Failed';
+      btn.className = 'test-btn fail';
+    }
+
+    setTimeout(function() {
+      btn.textContent = 'Test Key';
+      btn.className = 'test-btn';
+    }, 5000);
+  };
+
+  window.generateCommand = function() {
+    var name = document.getElementById('f-name').value.trim();
+    var url = document.getElementById('f-url').value.trim();
+    var header = document.getElementById('f-header').value.trim();
+    var source = document.getElementById('f-source').value;
+    var ref = document.getElementById('f-ref').value.trim();
+    var prefix = document.getElementById('f-prefix').value;
+
+    if (!name || !url || !ref) {
+      alert('Please fill in service name, base URL, and reference.');
+      return;
+    }
+
+    var cmd = 'warden add-key ' + shellEscape(name) +
+      ' --base-url ' + shellEscape(url) +
+      ' --header ' + shellEscape(header || 'Authorization') +
+      ' --source ' + shellEscape(source) +
+      ' --reference ' + shellEscape(ref);
+
+    if (prefix) {
+      cmd += ' --prefix ' + shellEscape(prefix);
+    }
+
+    var output = document.getElementById('cli-output');
+    output.textContent = '$ ' + cmd + '\n\n# Then restart Warden to pick up the new service:\n$ systemctl --user restart warden';
+    output.classList.add('visible');
+  };
+
+  function shellEscape(str) {
+    if (/^[a-zA-Z0-9._\/:=-]+$/.test(str)) return str;
+    return "'" + str.replace(/'/g, "'\\''") + "'";
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  window.loadAll = loadAll;
+  loadAll();
+})();
+</script>
+</body>
+</html>

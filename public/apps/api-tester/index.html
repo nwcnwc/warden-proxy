@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Tester &mdash; Warden</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1a1a1a;
+    --surface-hover: #242424;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #00ff88;
+    --accent-dim: rgba(0, 255, 136, 0.1);
+    --accent-border: rgba(0, 255, 136, 0.2);
+    --danger: #ff4444;
+    --warn: #ffaa00;
+    --info: #60a5fa;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .back-link {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .back-link:hover { color: var(--accent); }
+
+  .header h1 { font-size: 16px; font-weight: 600; }
+
+  /* ── Layout ── */
+  .main {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  .sidebar {
+    width: 260px;
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .sidebar-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .sidebar-header h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+  }
+
+  .sidebar-clear {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .sidebar-clear:hover { color: var(--danger); }
+
+  .history-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+  }
+
+  .history-item {
+    padding: 8px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: background 0.15s;
+    margin-bottom: 2px;
+  }
+
+  .history-item:hover { background: var(--surface-hover); }
+
+  .history-method {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 5px;
+    border-radius: 3px;
+    min-width: 36px;
+    text-align: center;
+  }
+
+  .method-GET { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
+  .method-POST { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
+  .method-PUT { background: rgba(255, 170, 0, 0.2); color: #ffaa00; }
+  .method-DELETE { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
+  .method-PATCH { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
+
+  .history-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+  }
+
+  .history-empty {
+    text-align: center;
+    padding: 24px 16px;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* ── Request Panel ── */
+  .content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .request-bar {
+    display: flex;
+    gap: 8px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .method-select {
+    background: var(--bg);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-weight: 600;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .service-select {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    min-width: 120px;
+  }
+
+  .path-input {
+    flex: 1;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+  }
+
+  .path-input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .send-btn {
+    background: var(--accent);
+    color: #0a0a0a;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 20px;
+    font-weight: 600;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+  .send-btn:hover { opacity: 0.85; }
+  .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Tabs ── */
+  .panels {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .tab-bar {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    padding: 0 20px;
+  }
+
+  .tab {
+    padding: 10px 16px;
+    font-size: 13px;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: inherit;
+  }
+
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .tab-panels {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .tab-panel {
+    display: none;
+    position: absolute;
+    inset: 0;
+    overflow: auto;
+    padding: 16px 20px;
+  }
+
+  .tab-panel.active { display: block; }
+
+  /* ── Editors ── */
+  .editor-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  textarea.editor {
+    width: 100%;
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  textarea.editor:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  .headers-editor { min-height: 120px; }
+  .body-editor { min-height: 200px; }
+
+  /* ── Response ── */
+  .response-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+
+  .status-code {
+    font-size: 14px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 4px;
+  }
+
+  .status-2xx { background: rgba(0, 255, 136, 0.15); color: var(--accent); }
+  .status-3xx { background: rgba(96, 165, 250, 0.15); color: var(--info); }
+  .status-4xx { background: rgba(255, 170, 0, 0.15); color: var(--warn); }
+  .status-5xx { background: rgba(255, 68, 68, 0.15); color: var(--danger); }
+
+  .response-meta {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .response-body {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: calc(100vh - 360px);
+  }
+
+  .response-empty {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+  }
+
+  /* Syntax highlighting for JSON */
+  .json-key { color: #60a5fa; }
+  .json-string { color: #fbbf24; }
+  .json-number { color: var(--accent); }
+  .json-bool { color: #f472b6; }
+  .json-null { color: var(--text-muted); }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .request-bar { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <a class="back-link" href="/">&larr; Launchpad</a>
+    <h1>API Tester</h1>
+  </div>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h3>History</h3>
+      <button class="sidebar-clear" onclick="clearHistory()">Clear</button>
+    </div>
+    <div class="history-list" id="history-list">
+      <div class="history-empty" id="history-empty">No requests yet</div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="request-bar">
+      <select class="method-select" id="method">
+        <option>GET</option>
+        <option selected>POST</option>
+        <option>PUT</option>
+        <option>PATCH</option>
+        <option>DELETE</option>
+      </select>
+      <select class="service-select" id="service">
+        <option value="">Loading...</option>
+      </select>
+      <input class="path-input" id="path" type="text" placeholder="/v1/chat/completions" value="/v1/chat/completions">
+      <button class="send-btn" id="send-btn" onclick="sendRequest()">Send</button>
+    </div>
+
+    <div class="panels">
+      <div class="tab-bar">
+        <button class="tab active" data-tab="headers">Headers</button>
+        <button class="tab" data-tab="body">Body</button>
+        <button class="tab" data-tab="response">Response</button>
+      </div>
+
+      <div class="tab-panels">
+        <div class="tab-panel active" id="tab-headers">
+          <label class="editor-label">Request Headers (one per line: Header-Name: value)</label>
+          <textarea class="editor headers-editor" id="headers">Content-Type: application/json</textarea>
+        </div>
+
+        <div class="tab-panel" id="tab-body">
+          <label class="editor-label">Request Body (JSON)</label>
+          <textarea class="editor body-editor" id="body">{
+  "model": "gpt-4o",
+  "messages": [
+    { "role": "user", "content": "Hello" }
+  ]
+}</textarea>
+        </div>
+
+        <div class="tab-panel" id="tab-response">
+          <div class="response-empty" id="response-empty">Send a request to see the response</div>
+          <div id="response-content" style="display:none;">
+            <div class="response-header">
+              <span class="status-code" id="resp-status"></span>
+              <span class="response-meta" id="resp-meta"></span>
+            </div>
+            <label class="editor-label">Response Headers</label>
+            <div class="response-body" id="resp-headers" style="max-height:150px;margin-bottom:12px;"></div>
+            <label class="editor-label">Response Body</label>
+            <div class="response-body" id="resp-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/client/warden-loader.js"></script>
+<script>
+(function() {
+  const HISTORY_KEY = 'warden-api-tester-history';
+  const MAX_HISTORY = 50;
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(function(tab) {
+    tab.addEventListener('click', function() {
+      document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // Load services
+  async function loadServices() {
+    var select = document.getElementById('service');
+    try {
+      var resp = await fetch('/routes');
+      var routes = await resp.json();
+      var services = Object.values(routes);
+      select.innerHTML = '';
+      services.forEach(function(s) {
+        var opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        select.appendChild(opt);
+      });
+      if (services.length === 0) {
+        select.innerHTML = '<option value="">No services</option>';
+      }
+    } catch(e) {
+      select.innerHTML = '<option value="openai">openai</option><option value="anthropic">anthropic</option>';
+    }
+  }
+
+  // JSON syntax highlighting
+  function highlightJSON(str) {
+    try {
+      var obj = typeof str === 'string' ? JSON.parse(str) : str;
+      str = JSON.stringify(obj, null, 2);
+    } catch(e) {
+      return escapeHtml(str);
+    }
+
+    return str.replace(
+      /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
+      function(match) {
+        var cls = 'json-number';
+        if (/^"/.test(match)) {
+          if (/:$/.test(match)) {
+            cls = 'json-key';
+            return '<span class="' + cls + '">' + escapeHtml(match.replace(/:$/, '')) + '</span>:';
+          }
+          cls = 'json-string';
+        } else if (/true|false/.test(match)) {
+          cls = 'json-bool';
+        } else if (/null/.test(match)) {
+          cls = 'json-null';
+        }
+        return '<span class="' + cls + '">' + escapeHtml(match) + '</span>';
+      }
+    );
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function parseHeaders(text) {
+    var headers = {};
+    text.split('\n').forEach(function(line) {
+      line = line.trim();
+      if (!line) return;
+      var idx = line.indexOf(':');
+      if (idx > 0) {
+        headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+      }
+    });
+    return headers;
+  }
+
+  // Send request
+  window.sendRequest = async function() {
+    var method = document.getElementById('method').value;
+    var service = document.getElementById('service').value;
+    var path = document.getElementById('path').value;
+    var headersText = document.getElementById('headers').value;
+    var bodyText = document.getElementById('body').value;
+
+    if (!service) { alert('Select a service'); return; }
+    if (!path.startsWith('/')) path = '/' + path;
+
+    var url = '/proxy/' + service + path;
+    var headers = parseHeaders(headersText);
+
+    var fetchOpts = {
+      method: method,
+      headers: headers
+    };
+
+    if (method !== 'GET' && method !== 'HEAD' && bodyText.trim()) {
+      fetchOpts.body = bodyText;
+    }
+
+    document.getElementById('send-btn').disabled = true;
+
+    // Switch to response tab
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.querySelector('[data-tab="response"]').classList.add('active');
+    document.getElementById('tab-response').classList.add('active');
+
+    var startTime = performance.now();
+
+    try {
+      var resp = await fetch(url, fetchOpts);
+      var elapsed = Math.round(performance.now() - startTime);
+      var respBody = await resp.text();
+
+      // Show response
+      document.getElementById('response-empty').style.display = 'none';
+      document.getElementById('response-content').style.display = 'block';
+
+      var statusEl = document.getElementById('resp-status');
+      statusEl.textContent = resp.status + ' ' + resp.statusText;
+      var cls = 'status-' + Math.floor(resp.status / 100) + 'xx';
+      statusEl.className = 'status-code ' + cls;
+
+      var size = respBody.length;
+      var sizeStr = size > 1024 ? (size / 1024).toFixed(1) + ' KB' : size + ' B';
+      document.getElementById('resp-meta').textContent = elapsed + 'ms | ' + sizeStr;
+
+      // Response headers
+      var respHeaders = [];
+      resp.headers.forEach(function(v, k) {
+        respHeaders.push(k + ': ' + v);
+      });
+      document.getElementById('resp-headers').textContent = respHeaders.join('\n');
+
+      // Response body with syntax highlighting
+      var bodyEl = document.getElementById('resp-body');
+      var contentType = resp.headers.get('content-type') || '';
+      if (contentType.indexOf('json') !== -1) {
+        bodyEl.innerHTML = highlightJSON(respBody);
+      } else {
+        bodyEl.textContent = respBody;
+      }
+
+      // Save to history
+      saveHistory({
+        method: method,
+        service: service,
+        path: path,
+        headers: headersText,
+        body: bodyText,
+        status: resp.status,
+        timestamp: Date.now()
+      });
+
+    } catch(e) {
+      document.getElementById('response-empty').style.display = 'none';
+      document.getElementById('response-content').style.display = 'block';
+      var statusEl = document.getElementById('resp-status');
+      statusEl.textContent = 'Error';
+      statusEl.className = 'status-code status-5xx';
+      document.getElementById('resp-meta').textContent = '';
+      document.getElementById('resp-headers').textContent = '';
+      document.getElementById('resp-body').textContent = e.message;
+    }
+
+    document.getElementById('send-btn').disabled = false;
+  };
+
+  // History management
+  function getHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
+    catch(e) { return []; }
+  }
+
+  function saveHistory(entry) {
+    var history = getHistory();
+    history.unshift(entry);
+    if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    renderHistory();
+  }
+
+  function renderHistory() {
+    var history = getHistory();
+    var list = document.getElementById('history-list');
+    var empty = document.getElementById('history-empty');
+
+    list.innerHTML = '';
+    if (history.length === 0) {
+      list.appendChild(empty);
+      empty.style.display = 'block';
+      return;
+    }
+
+    history.forEach(function(entry, idx) {
+      var div = document.createElement('div');
+      div.className = 'history-item';
+      div.innerHTML =
+        '<span class="history-method method-' + entry.method + '">' + entry.method + '</span>' +
+        '<span class="history-path">' + escapeHtml(entry.service + entry.path) + '</span>';
+      div.addEventListener('click', function() { loadHistoryEntry(entry); });
+      list.appendChild(div);
+    });
+  }
+
+  function loadHistoryEntry(entry) {
+    document.getElementById('method').value = entry.method;
+    document.getElementById('service').value = entry.service;
+    document.getElementById('path').value = entry.path;
+    document.getElementById('headers').value = entry.headers || '';
+    document.getElementById('body').value = entry.body || '';
+    // Switch to headers tab
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.querySelector('[data-tab="headers"]').classList.add('active');
+    document.getElementById('tab-headers').classList.add('active');
+  }
+
+  window.clearHistory = function() {
+    localStorage.removeItem(HISTORY_KEY);
+    renderHistory();
+  };
+
+  // Keyboard shortcut: Ctrl+Enter to send
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+      e.preventDefault();
+      sendRequest();
+    }
+  });
+
+  loadServices();
+  renderHistory();
+})();
+</script>
+</body>
+</html>

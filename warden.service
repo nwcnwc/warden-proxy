@@ -1,0 +1,28 @@
+[Unit]
+Description=Warden Proxy — Safe external access for browser applications
+Documentation=https://github.com/nwcnwc/warden-proxy
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/warden start
+Restart=on-failure
+RestartSec=5
+
+# Environment file (optional)
+EnvironmentFile=-%h/.warden/env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=warden
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.warden
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target
