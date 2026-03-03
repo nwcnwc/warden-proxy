@@ -206,3 +206,162 @@ pub fn init_config() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── Env var interpolation ──
+
+    #[test]
+    fn interpolate_single_var() {
+        unsafe { std::env::set_var("WARDEN_INTERP_TEST_1", "hello") };
+        let result = interpolate_env("prefix_${WARDEN_INTERP_TEST_1}_suffix");
+        assert_eq!(result, "prefix_hello_suffix");
+        unsafe { std::env::remove_var("WARDEN_INTERP_TEST_1") };
+    }
+
+    #[test]
+    fn interpolate_multiple_vars() {
+        unsafe { std::env::set_var("WARDEN_INTERP_A", "foo") };
+        unsafe { std::env::set_var("WARDEN_INTERP_B", "bar") };
+        let result = interpolate_env("${WARDEN_INTERP_A}:${WARDEN_INTERP_B}");
+        assert_eq!(result, "foo:bar");
+        unsafe { std::env::remove_var("WARDEN_INTERP_A") };
+        unsafe { std::env::remove_var("WARDEN_INTERP_B") };
+    }
+
+    #[test]
+    fn interpolate_missing_var_preserved() {
+        unsafe { std::env::remove_var("WARDEN_MISSING_VAR_XYZ") };
+        let result = interpolate_env("key=${WARDEN_MISSING_VAR_XYZ}");
+        assert_eq!(result, "key=${WARDEN_MISSING_VAR_XYZ}");
+    }
+
+    #[test]
+    fn interpolate_no_vars_unchanged() {
+        let result = interpolate_env("no variables here");
+        assert_eq!(result, "no variables here");
+    }
+
+    #[test]
+    fn interpolate_empty_string() {
+        let result = interpolate_env("");
+        assert_eq!(result, "");
+    }
+
+    // ── Config parsing ──
+
+    #[test]
+    fn parse_minimal_config() {
+        let json = r#"{ "port": 8080 }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.port, 8080);
+        assert!(config.keys.is_empty());
+        assert!(config.access.is_empty());
+    }
+
+    #[test]
+    fn parse_full_config() {
+        let json = r#"{
+            "port": 7400,
+            "log_level": "debug",
+            "keys": {
+                "openai": {
+                    "base_url": "https://api.openai.com",
+                    "header": "Authorization",
+                    "source": {
+                        "provider": "env",
+                        "ref": "OPENAI_API_KEY",
+                        "prefix": "Bearer "
+                    }
+                }
+            },
+            "access": [
+                { "origin": "http://localhost:*", "allow": ["openai"] }
+            ],
+            "limits": {
+                "openai": { "rpm": 60, "rpd": 1000 }
+            }
+        }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.port, 7400);
+        assert_eq!(config.log_level, "debug");
+        assert_eq!(config.keys.len(), 1);
+        assert_eq!(config.access.len(), 1);
+        assert_eq!(config.limits.len(), 1);
+
+        let openai = config.keys.get("openai").unwrap();
+        assert_eq!(openai.base_url, "https://api.openai.com");
+        let source = openai.source.as_ref().unwrap();
+        assert_eq!(source.provider, "env");
+        assert_eq!(source.prefix.as_deref(), Some("Bearer "));
+    }
+
+    #[test]
+    fn parse_legacy_value_config() {
+        let json = r#"{
+            "keys": {
+                "openai": {
+                    "base_url": "https://api.openai.com",
+                    "header": "Authorization",
+                    "value": "Bearer sk-test-key"
+                }
+            }
+        }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        let openai = config.keys.get("openai").unwrap();
+        assert_eq!(openai.value.as_deref(), Some("Bearer sk-test-key"));
+        assert!(openai.source.is_none());
+    }
+
+    #[test]
+    fn parse_multiple_providers() {
+        let json = r#"{
+            "keys": {
+                "openai": {
+                    "base_url": "https://api.openai.com",
+                    "source": { "provider": "1password", "ref": "op://Dev/OpenAI/key" }
+                },
+                "anthropic": {
+                    "base_url": "https://api.anthropic.com",
+                    "source": { "provider": "env", "ref": "ANTHROPIC_KEY" }
+                },
+                "google": {
+                    "base_url": "https://generativelanguage.googleapis.com",
+                    "source": { "provider": "keyring", "ref": "warden/google" }
+                }
+            }
+        }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.keys.len(), 3);
+        assert_eq!(config.keys["openai"].source.as_ref().unwrap().provider, "1password");
+        assert_eq!(config.keys["anthropic"].source.as_ref().unwrap().provider, "env");
+        assert_eq!(config.keys["google"].source.as_ref().unwrap().provider, "keyring");
+    }
+
+    // ── Default values ──
+
+    #[test]
+    fn defaults_applied_for_missing_fields() {
+        let json = r#"{}"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.port, 7400);
+        assert_eq!(config.log_level, "info");
+        assert!(config.keys.is_empty());
+    }
+
+    // ── Config paths ──
+
+    #[test]
+    fn config_dir_is_in_home() {
+        let dir = config_dir();
+        assert!(dir.ends_with(".warden"));
+    }
+
+    #[test]
+    fn config_path_is_json_in_dir() {
+        let path = config_path();
+        assert!(path.ends_with("config.json"));
+    }
+}

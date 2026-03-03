@@ -92,36 +92,127 @@ mod tests {
     use super::*;
     use crate::config::LimitConfig;
 
-    #[test]
-    fn allows_under_limit() {
+    fn make_limiter(limits: Vec<(&str, Option<u32>, Option<u32>)>) -> RateLimiter {
         let config = WardenConfig {
             port: 7400,
             log_level: "info".to_string(),
             keys: HashMap::new(),
             access: vec![],
-            limits: HashMap::from([
-                ("openai".to_string(), LimitConfig { rpm: Some(5), rpd: None }),
-            ]),
+            limits: limits.into_iter().map(|(name, rpm, rpd)| {
+                (name.to_string(), LimitConfig { rpm, rpd })
+            }).collect(),
         };
-        let mut limiter = RateLimiter::from_config(&config);
-        assert!(limiter.check("openai"));
-        assert!(limiter.check("openai"));
+        RateLimiter::from_config(&config)
+    }
+
+    // ── RPM limits ──
+
+    #[test]
+    fn allows_under_rpm_limit() {
+        let mut limiter = make_limiter(vec![("openai", Some(5), None)]);
+        for _ in 0..5 {
+            assert!(limiter.check("openai"));
+        }
     }
 
     #[test]
-    fn blocks_over_limit() {
-        let config = WardenConfig {
-            port: 7400,
-            log_level: "info".to_string(),
-            keys: HashMap::new(),
-            access: vec![],
-            limits: HashMap::from([
-                ("test".to_string(), LimitConfig { rpm: Some(2), rpd: None }),
-            ]),
-        };
-        let mut limiter = RateLimiter::from_config(&config);
+    fn blocks_over_rpm_limit() {
+        let mut limiter = make_limiter(vec![("test", Some(2), None)]);
         assert!(limiter.check("test"));
         assert!(limiter.check("test"));
-        assert!(!limiter.check("test")); // Over limit
+        assert!(!limiter.check("test"));
+    }
+
+    #[test]
+    fn rpm_limit_at_exact_boundary() {
+        let mut limiter = make_limiter(vec![("test", Some(3), None)]);
+        assert!(limiter.check("test")); // 1
+        assert!(limiter.check("test")); // 2
+        assert!(limiter.check("test")); // 3 — at limit
+        assert!(!limiter.check("test")); // 4 — over
+    }
+
+    // ── RPD limits ──
+
+    #[test]
+    fn blocks_over_rpd_limit() {
+        let mut limiter = make_limiter(vec![("test", None, Some(3))]);
+        assert!(limiter.check("test"));
+        assert!(limiter.check("test"));
+        assert!(limiter.check("test"));
+        assert!(!limiter.check("test")); // Over daily limit
+    }
+
+    // ── Combined limits ──
+
+    #[test]
+    fn rpm_and_rpd_both_enforced() {
+        // 2 per minute, 10 per day — RPM should trigger first
+        let mut limiter = make_limiter(vec![("test", Some(2), Some(10))]);
+        assert!(limiter.check("test"));
+        assert!(limiter.check("test"));
+        assert!(!limiter.check("test")); // RPM hit before RPD
+    }
+
+    // ── No limits ──
+
+    #[test]
+    fn no_limits_allows_everything() {
+        let mut limiter = make_limiter(vec![]);
+        for _ in 0..100 {
+            assert!(limiter.check("anything"));
+        }
+    }
+
+    #[test]
+    fn unlisted_service_always_allowed() {
+        let mut limiter = make_limiter(vec![("openai", Some(1), None)]);
+        // openai is limited, but "other" is not configured
+        assert!(limiter.check("other"));
+        assert!(limiter.check("other"));
+        assert!(limiter.check("other"));
+    }
+
+    // ── Per-service isolation ──
+
+    #[test]
+    fn limits_are_per_service() {
+        let mut limiter = make_limiter(vec![
+            ("openai", Some(2), None),
+            ("anthropic", Some(2), None),
+        ]);
+        assert!(limiter.check("openai"));
+        assert!(limiter.check("openai"));
+        assert!(!limiter.check("openai")); // openai exhausted
+
+        // anthropic should still be fine
+        assert!(limiter.check("anthropic"));
+        assert!(limiter.check("anthropic"));
+        assert!(!limiter.check("anthropic"));
+    }
+
+    // ── Status reporting ──
+
+    #[test]
+    fn get_status_reports_usage() {
+        let mut limiter = make_limiter(vec![("openai", Some(10), Some(100))]);
+        limiter.check("openai");
+        limiter.check("openai");
+        limiter.check("openai");
+
+        let status = limiter.get_status();
+        let openai = status.get("openai").unwrap();
+        let usage = openai.get("usage").unwrap();
+        assert_eq!(usage.get("last_minute").unwrap().as_u64().unwrap(), 3);
+        assert_eq!(usage.get("last_day").unwrap().as_u64().unwrap(), 3);
+    }
+
+    #[test]
+    fn get_status_empty_when_no_requests() {
+        let limiter = make_limiter(vec![("openai", Some(10), None)]);
+        let status = limiter.get_status();
+        let openai = status.get("openai").unwrap();
+        let usage = openai.get("usage").unwrap();
+        assert_eq!(usage.get("last_minute").unwrap().as_u64().unwrap(), 0);
     }
 }

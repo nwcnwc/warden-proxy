@@ -1,13 +1,23 @@
-node_modules/
-.env
-.warden/
-*.log
-dist/
-coverage/
-.DS_Store
+# Build artifacts
 target/
 
+# Environment & secrets
+.env
+.env.*
+.warden/
 
-# Added by cargo
+# Logs
+*.log
 
-/target
+# IDE & OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Node (legacy)
+node_modules/
+dist/
+coverage/

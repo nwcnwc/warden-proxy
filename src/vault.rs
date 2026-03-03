@@ -467,6 +467,286 @@ pub fn encrypt_vault(entries: &HashMap<String, String>, password: &str) -> Vec<u
 // Environment Variable
 // ════════════════════════════════════════════════════════
 
+// ════════════════════════════════════════════════════════
+// Tests
+// ════════════════════════════════════════════════════════
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::*;
+
+    fn make_config_with_inline(services: Vec<(&str, &str, &str, &str)>) -> WardenConfig {
+        let mut keys = HashMap::new();
+        for (name, header, value, base_url) in services {
+            keys.insert(name.to_string(), ServiceKeyConfig {
+                header: Some(header.to_string()),
+                base_url: base_url.to_string(),
+                value: Some(value.to_string()),
+                source: None,
+            });
+        }
+        WardenConfig {
+            port: 7400,
+            log_level: "info".to_string(),
+            keys,
+            access: vec![],
+            limits: HashMap::new(),
+        }
+    }
+
+    // ── Basic vault operations ──
+
+    #[test]
+    fn loads_services_from_config() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-test", "https://api.openai.com"),
+            ("anthropic", "x-api-key", "sk-ant-test", "https://api.anthropic.com"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+        assert_eq!(vault.list_services().len(), 2);
+    }
+
+    #[test]
+    fn get_service_returns_correct_data() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-test", "https://api.openai.com"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+        let svc = vault.get_service("openai").unwrap();
+        assert_eq!(svc.header, "Authorization");
+        assert_eq!(svc.value, "Bearer sk-test");
+        assert_eq!(svc.base_url, "https://api.openai.com");
+    }
+
+    #[test]
+    fn get_service_returns_none_for_unknown() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-test", "https://api.openai.com"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+        assert!(vault.get_service("evil").is_none());
+        assert!(vault.get_service("").is_none());
+        assert!(vault.get_service("openai-fake").is_none());
+    }
+
+    #[test]
+    fn base_url_trailing_slash_stripped() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-test", "https://api.openai.com/"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+        let svc = vault.get_service("openai").unwrap();
+        assert_eq!(svc.base_url, "https://api.openai.com");
+    }
+
+    // ── Route map ──
+
+    #[test]
+    fn route_map_maps_base_url_to_name() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-test", "https://api.openai.com"),
+            ("anthropic", "x-api-key", "sk-ant", "https://api.anthropic.com"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+        let routes = vault.get_route_map();
+        assert_eq!(routes.get("https://api.openai.com").unwrap(), "openai");
+        assert_eq!(routes.get("https://api.anthropic.com").unwrap(), "anthropic");
+    }
+
+    #[test]
+    fn route_map_does_not_contain_unregistered() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-test", "https://api.openai.com"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+        let routes = vault.get_route_map();
+        assert!(routes.get("https://evil.com").is_none());
+    }
+
+    // ── Source resolution: env ──
+
+    #[test]
+    fn env_source_resolves_variable() {
+        unsafe { std::env::set_var("WARDEN_TEST_KEY_12345", "test-secret-value") };
+        let source = KeySource {
+            provider: "env".to_string(),
+            reference: Some("WARDEN_TEST_KEY_12345".to_string()),
+            ref_field: None,
+            prefix: None,
+            field: None,
+            path: None,
+        };
+        let result = resolve_env("test-service", &source);
+        assert_eq!(result, Some("test-secret-value".to_string()));
+        unsafe { std::env::remove_var("WARDEN_TEST_KEY_12345") };
+    }
+
+    #[test]
+    fn env_source_returns_none_for_missing_var() {
+        unsafe { std::env::remove_var("WARDEN_NONEXISTENT_VAR_XYZ") };
+        let source = KeySource {
+            provider: "env".to_string(),
+            reference: Some("WARDEN_NONEXISTENT_VAR_XYZ".to_string()),
+            ref_field: None,
+            prefix: None,
+            field: None,
+            path: None,
+        };
+        let result = resolve_env("test-service", &source);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn env_source_returns_none_for_empty_var() {
+        unsafe { std::env::set_var("WARDEN_EMPTY_VAR_TEST", "") };
+        let source = KeySource {
+            provider: "env".to_string(),
+            reference: Some("WARDEN_EMPTY_VAR_TEST".to_string()),
+            ref_field: None,
+            prefix: None,
+            field: None,
+            path: None,
+        };
+        let result = resolve_env("test-service", &source);
+        assert!(result.is_none());
+        unsafe { std::env::remove_var("WARDEN_EMPTY_VAR_TEST") };
+    }
+
+    // ── Source resolution: inline ──
+
+    #[test]
+    fn inline_source_returns_reference() {
+        let source = KeySource {
+            provider: "inline".to_string(),
+            reference: Some("my-plaintext-key".to_string()),
+            ref_field: None,
+            prefix: None,
+            field: None,
+            path: None,
+        };
+        let result = resolve_source("test", &source, None);
+        assert_eq!(result, Some("my-plaintext-key".to_string()));
+    }
+
+    // ── Source resolution: unknown provider ──
+
+    #[test]
+    fn unknown_provider_returns_none() {
+        let source = KeySource {
+            provider: "doesnt-exist".to_string(),
+            reference: Some("anything".to_string()),
+            ref_field: None,
+            prefix: None,
+            field: None,
+            path: None,
+        };
+        let result = resolve_source("test", &source, None);
+        assert!(result.is_none());
+    }
+
+    // ── Prefix application ──
+
+    #[test]
+    fn prefix_applied_to_resolved_value() {
+        unsafe { std::env::set_var("WARDEN_PREFIX_TEST_KEY", "sk-raw-key") };
+        let mut keys = HashMap::new();
+        keys.insert("openai".to_string(), ServiceKeyConfig {
+            header: Some("Authorization".to_string()),
+            base_url: "https://api.openai.com".to_string(),
+            value: None,
+            source: Some(KeySource {
+                provider: "env".to_string(),
+                reference: Some("WARDEN_PREFIX_TEST_KEY".to_string()),
+                ref_field: None,
+                prefix: Some("Bearer ".to_string()),
+                field: None,
+                path: None,
+            }),
+        });
+        let config = WardenConfig {
+            port: 7400,
+            log_level: "info".to_string(),
+            keys,
+            access: vec![],
+            limits: HashMap::new(),
+        };
+        let vault = KeyVault::from_config(&config);
+        let svc = vault.get_service("openai").unwrap();
+        assert_eq!(svc.value, "Bearer sk-raw-key");
+        unsafe { std::env::remove_var("WARDEN_PREFIX_TEST_KEY") };
+    }
+
+    // ── Encrypted vault ──
+
+    #[test]
+    fn encrypt_decrypt_roundtrip() {
+        let mut entries = HashMap::new();
+        entries.insert("openai".to_string(), "sk-secret-key".to_string());
+        entries.insert("anthropic".to_string(), "sk-ant-key".to_string());
+
+        let password = "test-master-password";
+        let encrypted = encrypt_vault(&entries, password);
+        let decrypted = decrypt_vault(&encrypted, password).unwrap();
+
+        assert_eq!(decrypted.get("openai").unwrap(), "sk-secret-key");
+        assert_eq!(decrypted.get("anthropic").unwrap(), "sk-ant-key");
+    }
+
+    #[test]
+    fn decrypt_with_wrong_password_fails() {
+        let mut entries = HashMap::new();
+        entries.insert("test".to_string(), "secret".to_string());
+
+        let encrypted = encrypt_vault(&entries, "correct-password");
+        let result = decrypt_vault(&encrypted, "wrong-password");
+        assert!(result.is_err());
+    }
+
+    // ── Default header ──
+
+    #[test]
+    fn default_header_is_authorization() {
+        let mut keys = HashMap::new();
+        keys.insert("test".to_string(), ServiceKeyConfig {
+            header: None, // No header specified
+            base_url: "https://api.example.com".to_string(),
+            value: Some("test-key".to_string()),
+            source: None,
+        });
+        let config = WardenConfig {
+            port: 7400,
+            log_level: "info".to_string(),
+            keys,
+            access: vec![],
+            limits: HashMap::new(),
+        };
+        let vault = KeyVault::from_config(&config);
+        let svc = vault.get_service("test").unwrap();
+        assert_eq!(svc.header, "Authorization");
+    }
+
+    // ── Security: key isolation ──
+
+    #[test]
+    fn services_are_isolated() {
+        let config = make_config_with_inline(vec![
+            ("openai", "Authorization", "Bearer sk-openai", "https://api.openai.com"),
+            ("anthropic", "x-api-key", "sk-anthropic", "https://api.anthropic.com"),
+        ]);
+        let vault = KeyVault::from_config(&config);
+
+        // Each service returns only its own key
+        let openai = vault.get_service("openai").unwrap();
+        assert_eq!(openai.value, "Bearer sk-openai");
+        assert!(!openai.value.contains("anthropic"));
+
+        let anthropic = vault.get_service("anthropic").unwrap();
+        assert_eq!(anthropic.value, "sk-anthropic");
+        assert!(!anthropic.value.contains("openai"));
+    }
+}
+
 fn resolve_env(service_name: &str, source: &KeySource) -> Option<String> {
     let var_name = source.reference.as_ref().or(source.ref_field.as_ref())?;
 
