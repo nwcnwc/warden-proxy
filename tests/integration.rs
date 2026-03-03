@@ -32,19 +32,15 @@ fn proxy_source_strips_auth_headers() {
 
 /// Security: Verify Service Worker strips auth headers
 #[test]
-fn service_worker_strips_auth_headers() {
+fn service_worker_is_dumb_bridge() {
     let sw_source = include_str!("../client/warden-sw.js");
     
-    assert!(sw_source.contains("authorization"), 
-        "Service Worker must filter authorization");
-    assert!(sw_source.contains("x-api-key"), 
-        "Service Worker must filter x-api-key");
-    assert!(sw_source.contains("api-key"), 
-        "Service Worker must filter api-key");
-    assert!(sw_source.contains("cookie"), 
-        "Service Worker must filter cookie");
-    assert!(sw_source.contains("SECURITY"), 
-        "Service Worker must have security documentation");
+    // SW must only reroute — it passes headers through untouched
+    assert!(sw_source.contains("event.request.headers"), 
+        "SW should forward original headers unchanged");
+    // SW must describe itself accurately
+    assert!(sw_source.contains("dumb bridge"), 
+        "SW should document that it is a dumb bridge");
 }
 
 /// Security: Verify Service Worker does NOT contain real key patterns
@@ -55,11 +51,14 @@ fn service_worker_contains_no_secrets() {
     // Should never contain actual API key patterns
     assert!(!sw_source.contains("sk-"), "SW must not contain OpenAI key patterns");
     assert!(!sw_source.contains("sk-ant-"), "SW must not contain Anthropic key patterns");
-    // Should not inject anything — that's the proxy's job
-    assert!(!sw_source.contains("inject"), "SW should not inject anything (proxy does that)");
-    // Should not reference session storage or secrets
-    assert!(!sw_source.contains("session_storage"), "SW should not touch session storage");
-    assert!(!sw_source.contains("local_storage"), "SW should not touch local storage");
+    // SW must be a dumb bridge — no security decisions whatsoever
+    assert!(!sw_source.contains("inject"), "SW must not inject anything");
+    assert!(!sw_source.contains("strip"), "SW must not strip anything");
+    assert!(!sw_source.contains("session_storage"), "SW must not touch session storage");
+    assert!(!sw_source.contains("local_storage"), "SW must not touch local storage");
+    assert!(!sw_source.contains("authorization"), "SW must not reference auth headers");
+    assert!(!sw_source.contains("x-api-key"), "SW must not reference API key headers");
+    assert!(!sw_source.contains("cookie"), "SW must not reference cookies");
 }
 
 /// Verify client files are properly embedded
