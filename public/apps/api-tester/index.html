@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>API Tester</title>
 <style>
   :root {
@@ -672,9 +673,11 @@
           status.className = 'key-status unset';
         }
       });
+      overlay.style.display = '';
       overlay.classList.add('open');
     } else {
       overlay.classList.remove('open');
+      overlay.style.display = 'none';
     }
   };
 
@@ -691,7 +694,9 @@
     });
     saveApiKeysToStorage(keys);
     updateServiceLabels();
-    document.getElementById('settings-overlay').classList.remove('open');
+    var overlay = document.getElementById('settings-overlay');
+    overlay.classList.remove('open');
+    overlay.style.display = 'none';
   };
 
   function updateServiceLabels() {
@@ -948,8 +953,15 @@
     renderHistory();
   };
 
-  // Keyboard shortcut: Ctrl+Enter to send
+  // Keyboard shortcuts
   document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+      var overlay = document.getElementById('settings-overlay');
+      if (overlay.classList.contains('open')) {
+        overlay.classList.remove('open');
+        overlay.style.display = 'none';
+      }
+    }
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
       sendRequest();
