@@ -1,18 +1,18 @@
 /**
  * Warden Loader
- * 
+ *
  * Drop this script into any web page to activate Warden's Service Worker.
  * Once loaded, all fetch() calls to registered APIs are transparently
  * rerouted through the Warden proxy.
- * 
- * Usage:
- *   <script src="http://127.0.0.1:7400/client/warden-loader.js"></script>
- * 
+ *
+ * Usage (when page is served by Warden):
+ *   <script src="/client/warden-loader.js"></script>
+ *
  * Or dynamically:
  *   const script = document.createElement('script');
- *   script.src = 'http://127.0.0.1:7400/client/warden-loader.js';
+ *   script.src = '/client/warden-loader.js';
  *   document.head.appendChild(script);
- * 
+ *
  * That's it. No other changes needed. The app's existing API calls
  * (with fake or no keys) will work transparently.
  */
@@ -25,7 +25,7 @@
 
   try {
     const registration = await navigator.serviceWorker.register(
-      'http://127.0.0.1:7400/client/warden-sw.js',
+      '/client/warden-sw.js',
       { scope: '/' }
     );
 

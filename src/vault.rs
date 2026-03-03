@@ -21,6 +21,7 @@ pub struct ServiceEntry {
     pub header: String,
     pub value: String,
     pub base_url: String,
+    pub timeout: Option<u64>,
 }
 
 impl KeyVault {
@@ -59,6 +60,7 @@ impl KeyVault {
                         header: svc.header.clone().unwrap_or_else(|| "Authorization".to_string()),
                         value: final_value,
                         base_url: svc.base_url.trim_end_matches('/').to_string(),
+                        timeout: svc.timeout,
                     });
                     info!("Service '{}': key loaded successfully", name);
                 }
@@ -484,14 +486,12 @@ mod tests {
                 base_url: base_url.to_string(),
                 value: Some(value.to_string()),
                 source: None,
+                timeout: None,
             });
         }
         WardenConfig {
-            port: 7400,
-            log_level: "info".to_string(),
             keys,
-            access: vec![],
-            limits: HashMap::new(),
+            ..Default::default()
         }
     }
 
@@ -663,13 +663,11 @@ mod tests {
                 field: None,
                 path: None,
             }),
+            timeout: None,
         });
         let config = WardenConfig {
-            port: 7400,
-            log_level: "info".to_string(),
             keys,
-            access: vec![],
-            limits: HashMap::new(),
+            ..Default::default()
         };
         let vault = KeyVault::from_config(&config);
         let svc = vault.get_service("openai").unwrap();
@@ -713,13 +711,11 @@ mod tests {
             base_url: "https://api.example.com".to_string(),
             value: Some("test-key".to_string()),
             source: None,
+            timeout: None,
         });
         let config = WardenConfig {
-            port: 7400,
-            log_level: "info".to_string(),
             keys,
-            access: vec![],
-            limits: HashMap::new(),
+            ..Default::default()
         };
         let vault = KeyVault::from_config(&config);
         let svc = vault.get_service("test").unwrap();

@@ -4,10 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct WardenConfig {
-    #[serde(default = "default_port")]
     pub port: u16,
-    #[serde(default = "default_log_level")]
     pub log_level: String,
     #[serde(default)]
     pub keys: HashMap<String, ServiceKeyConfig>,
@@ -15,6 +14,34 @@ pub struct WardenConfig {
     pub access: Vec<AccessRule>,
     #[serde(default)]
     pub limits: HashMap<String, LimitConfig>,
+    /// Map of URL path prefix -> local directory for static file serving
+    #[serde(default)]
+    pub sites: HashMap<String, String>,
+    /// Default directory for static files (default: ~/.warden/sites/)
+    pub public_dir: Option<String>,
+    /// Max request body size in bytes (default: 10MB)
+    pub max_body_size: usize,
+    /// Default request timeout in seconds (default: 30)
+    pub request_timeout: u64,
+    /// Enable structured JSON logging
+    pub json_logs: bool,
+}
+
+impl Default for WardenConfig {
+    fn default() -> Self {
+        Self {
+            port: 7400,
+            log_level: "info".to_string(),
+            keys: HashMap::new(),
+            access: vec![],
+            limits: HashMap::new(),
+            sites: HashMap::new(),
+            public_dir: None,
+            max_body_size: 10_485_760,
+            request_timeout: 30,
+            json_logs: false,
+        }
+    }
 }
 
 /// Configuration for a single service's API key.
@@ -29,6 +56,8 @@ pub struct ServiceKeyConfig {
     pub value: Option<String>,
     /// Key source configuration (preferred over direct value)
     pub source: Option<KeySource>,
+    /// Per-service request timeout in seconds (overrides global default)
+    pub timeout: Option<u64>,
 }
 
 /// Where to fetch the actual API key from.
@@ -84,9 +113,6 @@ pub struct LimitConfig {
     pub rpd: Option<u32>,
 }
 
-fn default_port() -> u16 { 7400 }
-fn default_log_level() -> String { "info".to_string() }
-
 /// Get the config directory path (~/.warden/)
 pub fn config_dir() -> PathBuf {
     dirs::home_dir()
@@ -97,6 +123,22 @@ pub fn config_dir() -> PathBuf {
 /// Get the config file path
 pub fn config_path() -> PathBuf {
     config_dir().join("config.json")
+}
+
+/// Get the default public directory for static files
+pub fn default_public_dir() -> PathBuf {
+    config_dir().join("sites")
+}
+
+/// Expand ~ to home directory in paths
+pub fn expand_path(path: &str) -> PathBuf {
+    if path.starts_with("~/") {
+        dirs::home_dir()
+            .expect("Could not determine home directory")
+            .join(&path[2..])
+    } else {
+        PathBuf::from(path)
+    }
 }
 
 /// Interpolate environment variables: ${VAR_NAME} -> env value
@@ -124,13 +166,7 @@ pub fn load_config() -> Result<WardenConfig, Box<dyn std::error::Error>> {
     if !path.exists() {
         eprintln!("⚠️  No config found at {}. Run 'warden init' first.", path.display());
         eprintln!("   Using default configuration.");
-        return Ok(WardenConfig {
-            port: 7400,
-            log_level: "info".to_string(),
-            keys: HashMap::new(),
-            access: vec![],
-            limits: HashMap::new(),
-        });
+        return Ok(WardenConfig::default());
     }
 
     let raw = fs::read_to_string(&path)?;
@@ -141,14 +177,28 @@ pub fn load_config() -> Result<WardenConfig, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
+/// Save config to file
+pub fn save_config(config: &WardenConfig) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config_path();
+    let json = serde_json::to_string_pretty(config)?;
+    fs::write(&path, json)?;
+    Ok(())
+}
+
 /// Initialize config directory and default config
 pub fn init_config() -> Result<(), Box<dyn std::error::Error>> {
     let dir = config_dir();
     let path = config_path();
+    let sites_dir = default_public_dir();
 
     if !dir.exists() {
         fs::create_dir_all(&dir)?;
         println!("✅ Created {}", dir.display());
+    }
+
+    if !sites_dir.exists() {
+        fs::create_dir_all(&sites_dir)?;
+        println!("✅ Created {}", sites_dir.display());
     }
 
     if !path.exists() {
@@ -340,6 +390,42 @@ mod tests {
         assert_eq!(config.keys["google"].source.as_ref().unwrap().provider, "keyring");
     }
 
+    // ── New config fields ──
+
+    #[test]
+    fn parse_config_with_sites() {
+        let json = r#"{
+            "sites": { "/app": "~/my-app/dist" },
+            "public_dir": "~/.warden/sites",
+            "max_body_size": 5242880,
+            "request_timeout": 60,
+            "json_logs": true
+        }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.sites.get("/app").unwrap(), "~/my-app/dist");
+        assert_eq!(config.public_dir.as_deref(), Some("~/.warden/sites"));
+        assert_eq!(config.max_body_size, 5_242_880);
+        assert_eq!(config.request_timeout, 60);
+        assert!(config.json_logs);
+    }
+
+    #[test]
+    fn parse_service_with_timeout() {
+        let json = r#"{
+            "keys": {
+                "openai": {
+                    "base_url": "https://api.openai.com",
+                    "header": "Authorization",
+                    "value": "Bearer test",
+                    "timeout": 120
+                }
+            }
+        }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        let openai = config.keys.get("openai").unwrap();
+        assert_eq!(openai.timeout, Some(120));
+    }
+
     // ── Default values ──
 
     #[test]
@@ -349,6 +435,9 @@ mod tests {
         assert_eq!(config.port, 7400);
         assert_eq!(config.log_level, "info");
         assert!(config.keys.is_empty());
+        assert_eq!(config.max_body_size, 10_485_760);
+        assert_eq!(config.request_timeout, 30);
+        assert!(!config.json_logs);
     }
 
     // ── Config paths ──
@@ -363,5 +452,20 @@ mod tests {
     fn config_path_is_json_in_dir() {
         let path = config_path();
         assert!(path.ends_with("config.json"));
+    }
+
+    // ── Path expansion ──
+
+    #[test]
+    fn expand_tilde_path() {
+        let expanded = expand_path("~/foo/bar");
+        assert!(!expanded.to_string_lossy().starts_with("~"));
+        assert!(expanded.to_string_lossy().ends_with("foo/bar"));
+    }
+
+    #[test]
+    fn expand_absolute_path_unchanged() {
+        let expanded = expand_path("/tmp/test");
+        assert_eq!(expanded, PathBuf::from("/tmp/test"));
     }
 }

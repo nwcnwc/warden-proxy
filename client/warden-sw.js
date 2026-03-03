@@ -1,12 +1,12 @@
 /**
  * Warden Service Worker
- * 
+ *
  * Installed inside the browser "VM". Transparently intercepts fetch requests
  * to registered API endpoints and reroutes them through the Warden proxy.
- * 
+ *
  * The app thinks it's talking to api.openai.com with its own key.
- * It's actually talking to localhost:7400, and Warden handles auth.
- * 
+ * It's actually talking to the Warden proxy, which handles auth.
+ *
  * SECURITY MODEL:
  * - This SW only rewrites the DESTINATION (URL routing)
  * - It does NOT touch, read, or forward any auth headers from the app
@@ -15,10 +15,11 @@
  * - The SW is "dumb routing" — the proxy is "smart auth"
  */
 
-const WARDEN_ORIGIN = 'http://127.0.0.1:7400';
+// Use same origin — Warden serves both the app and acts as the proxy
+const WARDEN_ORIGIN = self.location.origin;
 
 // Service routing table: API base URL → Warden service name
-// Loaded from Warden's /config endpoint on activation
+// Loaded from Warden's /routes endpoint on activation
 let serviceRoutes = {};
 
 // Fetch route config from Warden on activation
@@ -62,7 +63,7 @@ self.addEventListener('fetch', (event) => {
 
   // Reroute through Warden proxy
   // Original: https://api.openai.com/v1/chat/completions
-  // Becomes:  http://127.0.0.1:7400/proxy/openai/v1/chat/completions
+  // Becomes:  /proxy/openai/v1/chat/completions (same origin)
   const wardenUrl = `${WARDEN_ORIGIN}/proxy/${serviceName}${url.pathname}${url.search}`;
 
   // Clone the request but strip auth headers
@@ -71,7 +72,7 @@ self.addEventListener('fetch', (event) => {
   for (const [key, value] of event.request.headers) {
     const lower = key.toLowerCase();
     // Skip auth headers — Warden handles auth based on destination
-    if (lower === 'authorization' || lower === 'x-api-key' || 
+    if (lower === 'authorization' || lower === 'x-api-key' ||
         lower === 'api-key' || lower === 'cookie') {
       continue;
     }

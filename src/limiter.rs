@@ -94,13 +94,10 @@ mod tests {
 
     fn make_limiter(limits: Vec<(&str, Option<u32>, Option<u32>)>) -> RateLimiter {
         let config = WardenConfig {
-            port: 7400,
-            log_level: "info".to_string(),
-            keys: HashMap::new(),
-            access: vec![],
             limits: limits.into_iter().map(|(name, rpm, rpd)| {
                 (name.to_string(), LimitConfig { rpm, rpd })
             }).collect(),
+            ..Default::default()
         };
         RateLimiter::from_config(&config)
     }
