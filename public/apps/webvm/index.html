@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  WebVM for Warden — Debian Linux in the browser via CheerpX
+  WebVM — Debian Linux in the browser via CheerpX
 
   IMPORTANT: The Rust server MUST set these headers for this page to work:
     Cross-Origin-Embedder-Policy: require-corp
@@ -12,13 +12,13 @@
 
   For networking inside the VM:
   - Tailscale can be used for full network access (see https://tailscale.com/kb/1151/what-is-tailscale)
-  - HTTP API calls can be routed through Warden by configuring the VM's proxy settings
+  - HTTP API calls can be routed through the local proxy by configuring the VM's proxy settings
 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>WebVM &mdash; Warden</title>
+<title>WebVM</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5/css/xterm.min.css">
 <style>
   :root {
@@ -216,7 +216,7 @@
 </div>
 
 <div class="info-bar">
-  <span>Debian Linux via CheerpX | HTTP API calls route through Warden</span>
+  <span>Debian Linux via CheerpX</span>
   <span>
     <a href="https://github.com/leaningtech/webvm" target="_blank">WebVM on GitHub</a>
     &middot;
@@ -261,7 +261,7 @@
   if (typeof SharedArrayBuffer === 'undefined') {
     showError(
       'SharedArrayBuffer is not available.<br><br>' +
-      'The Warden server needs to send these headers for this page:<br>' +
+      'The server needs to send these headers for this page:<br>' +
       '<code>Cross-Origin-Embedder-Policy: require-corp</code><br>' +
       '<code>Cross-Origin-Opener-Policy: same-origin</code><br><br>' +
       'Add COEP/COOP header support to the Rust server for the /apps/webvm/ route.'
