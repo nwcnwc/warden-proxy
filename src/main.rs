@@ -8,14 +8,16 @@ mod websocket;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::collections::VecDeque;
 use axum::{
     Router,
+    body::Body,
     routing::{any, get},
     extract::State,
-    response::Json,
+    response::{Json, Response},
 };
 use clap::{Parser, Subcommand};
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 use tower_http::services::ServeDir;
 use tracing::info;
 
@@ -33,6 +35,20 @@ pub fn next_request_id() -> String {
     format!("wdn-{:08x}", count)
 }
 
+#[derive(Clone, serde::Serialize)]
+pub struct RequestLog {
+    pub id: String,
+    pub timestamp: u64,
+    pub method: String,
+    pub service: String,
+    pub path: String,
+    pub origin: String,
+    pub status: u16,
+    pub duration_ms: u64,
+    pub request_size: u64,
+    pub response_size: u64,
+}
+
 /// Shared application state
 pub struct AppState {
     pub config: WardenConfig,
@@ -42,6 +58,8 @@ pub struct AppState {
     pub client: reqwest::Client,
     pub start_time: std::time::Instant,
     pub request_count: AtomicU64,
+    pub traffic_log: RwLock<VecDeque<RequestLog>>,
+    pub traffic_tx: broadcast::Sender<RequestLog>,
 }
 
 #[derive(Parser)]
@@ -156,6 +174,8 @@ async fn start_server(port_override: Option<u16>) {
         .build()
         .expect("Failed to build HTTP client");
 
+    let (traffic_tx, _) = broadcast::channel(256);
+
     let state = Arc::new(AppState {
         config: config.clone(),
         vault,
@@ -164,12 +184,16 @@ async fn start_server(port_override: Option<u16>) {
         client,
         start_time: std::time::Instant::now(),
         request_count: AtomicU64::new(0),
+        traffic_log: RwLock::new(VecDeque::with_capacity(1000)),
+        traffic_tx,
     });
 
     let mut app = Router::new()
         .route("/health", get(health))
         .route("/status", get(status))
         .route("/routes", get(routes))
+        .route("/admin/api/traffic", get(traffic_list))
+        .route("/admin/api/traffic/stream", get(traffic_stream))
         .route("/client/{filename}", get(client_files::serve_client_file))
         .route("/proxy/{service}", any(proxy::handle))
         .route("/proxy/{service}/{*path}", any(proxy::handle))
@@ -275,6 +299,48 @@ fn format_duration(d: std::time::Duration) -> String {
 async fn routes(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     let route_map = state.vault.get_route_map();
     Json(serde_json::json!(route_map))
+}
+
+async fn traffic_list(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    let log = state.traffic_log.read().await;
+    let since: u64 = params.get("since")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let entries: Vec<&RequestLog> = log.iter()
+        .filter(|e| e.timestamp > since)
+        .collect();
+    Json(serde_json::json!(entries))
+}
+
+async fn traffic_stream(
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    let rx = state.traffic_tx.subscribe();
+    let stream = futures_util::stream::unfold(rx, |mut rx| async move {
+        loop {
+            match rx.recv().await {
+                Ok(entry) => {
+                    let data = serde_json::to_string(&entry).unwrap_or_default();
+                    return Some((
+                        Ok::<_, std::io::Error>(format!("data: {}\n\n", data)),
+                        rx,
+                    ));
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Closed) => return None,
+            }
+        }
+    });
+    let body = Body::from_stream(stream);
+    Response::builder()
+        .header("content-type", "text/event-stream")
+        .header("cache-control", "no-cache")
+        .header("access-control-allow-origin", "*")
+        .body(body)
+        .unwrap()
 }
 
 async fn check_status() {

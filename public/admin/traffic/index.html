@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<title>Traffic Monitor &mdash; Warden Admin</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #1a1a1a;
+    --surface-hover: #242424;
+    --border: #2a2a2a;
+    --text: #e0e0e0;
+    --text-muted: #888;
+    --accent: #ffaa00;
+    --accent-dim: rgba(255, 170, 0, 0.1);
+    --accent-border: rgba(255, 170, 0, 0.25);
+    --danger: #ff4444;
+    --success: #00ff88;
+    --warn: #ffaa00;
+    --info: #60a5fa;
+    --radius: 8px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .admin-banner {
+    background: var(--accent-dim); border-bottom: 1px solid var(--accent-border);
+    padding: 6px 20px; display: flex; align-items: center; gap: 8px;
+    font-size: 13px; color: var(--accent); font-weight: 700;
+    text-transform: uppercase; letter-spacing: 1px; flex-shrink: 0;
+  }
+  .admin-banner svg { width: 14px; height: 14px; fill: currentColor; }
+
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .back-link { color: var(--text-muted); text-decoration: none; font-size: 14px; }
+  .back-link:hover { color: var(--accent); }
+  .header h1 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .admin-tag {
+    font-size: 10px; padding: 2px 6px; border-radius: 3px;
+    background: var(--accent-dim); color: var(--accent);
+    border: 1px solid var(--accent-border); text-transform: uppercase;
+    letter-spacing: 0.5px; font-weight: 600;
+  }
+  .header-right { display: flex; align-items: center; gap: 8px; }
+  .hdr-btn {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
+    font-family: inherit; transition: all 0.2s;
+  }
+  .hdr-btn:hover { border-color: var(--accent-border); color: var(--text); }
+  .hdr-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex; align-items: center; gap: 24px; padding: 10px 20px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+    font-size: 13px; flex-shrink: 0; flex-wrap: wrap;
+  }
+  .stat { display: flex; align-items: center; gap: 6px; }
+  .stat-label { color: var(--text-muted); }
+  .stat-val { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-val.live { color: var(--success); }
+
+  /* Filter bar */
+  .filter-bar {
+    display: flex; gap: 8px; padding: 10px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0; flex-wrap: wrap; align-items: center;
+  }
+  .filter-select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: inherit; cursor: pointer;
+  }
+  .filter-input {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: inherit; width: 80px;
+  }
+  .filter-input:focus { outline: none; border-color: var(--accent); }
+  .filter-label { font-size: 12px; color: var(--text-muted); }
+
+  /* Table */
+  .table-wrap { flex: 1; overflow: auto; }
+
+  table {
+    width: 100%; border-collapse: collapse; font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+  thead { position: sticky; top: 0; z-index: 5; }
+  th {
+    text-align: left; padding: 8px 12px; background: var(--surface);
+    border-bottom: 1px solid var(--border); color: var(--text-muted);
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    font-weight: 600; white-space: nowrap;
+  }
+  td {
+    padding: 7px 12px; border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  tr:hover td { background: var(--surface-hover); }
+  tr.expanded td { background: var(--surface); }
+  tr.clickable { cursor: pointer; }
+
+  .method-badge {
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
+    display: inline-block; min-width: 40px; text-align: center;
+  }
+  .m-GET { background: rgba(96,165,250,0.2); color: #60a5fa; }
+  .m-POST { background: rgba(0,255,136,0.2); color: #00ff88; }
+  .m-PUT { background: rgba(255,170,0,0.2); color: #ffaa00; }
+  .m-DELETE { background: rgba(255,68,68,0.2); color: #ff4444; }
+  .m-PATCH { background: rgba(168,85,247,0.2); color: #a855f7; }
+  .m-HEAD { background: rgba(136,136,136,0.2); color: #aaa; }
+  .m-OPTIONS { background: rgba(136,136,136,0.2); color: #aaa; }
+
+  .status-badge {
+    font-weight: 600; padding: 2px 6px; border-radius: 3px;
+    display: inline-block; min-width: 32px; text-align: center;
+  }
+  .s-2xx { background: rgba(0,255,136,0.15); color: var(--success); }
+  .s-3xx { background: rgba(96,165,250,0.15); color: var(--info); }
+  .s-4xx { background: rgba(255,170,0,0.15); color: var(--warn); }
+  .s-5xx { background: rgba(255,68,68,0.15); color: var(--danger); }
+
+  .td-path {
+    max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+    color: var(--text-muted); font-family: 'SF Mono', monospace; font-size: 12px;
+  }
+  .td-service { color: var(--accent); font-weight: 500; }
+  .td-dur { color: var(--text-muted); }
+  .td-size { color: var(--text-muted); font-size: 12px; }
+
+  /* Expanded row */
+  .detail-row td {
+    padding: 12px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .detail-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+    font-size: 12px;
+  }
+  .detail-section h4 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 6px;
+  }
+  .detail-kv {
+    font-family: 'SF Mono', monospace; font-size: 12px;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; padding: 8px; line-height: 1.5;
+    max-height: 200px; overflow: auto;
+  }
+
+  .empty-state {
+    text-align: center; padding: 60px 20px; color: var(--text-muted);
+  }
+  .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: var(--text); }
+
+  @media (max-width: 768px) {
+    .stats-bar { gap: 12px; }
+    .filter-bar { gap: 4px; }
+    .detail-grid { grid-template-columns: 1fr; }
+    td, th { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="admin-banner">
+  <svg viewBox="0 0 16 16"><path d="M8 1a2 2 0 0 1 2 2v4H6V3a2 2 0 0 1 2-2zm3 6V3a3 3 0 0 0-6 0v4a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/></svg>
+  <span>Warden Admin Panel</span>
+</div>
+
+<div class="header">
+  <div class="header-left">
+    <a class="back-link" href="/">&larr; Launchpad</a>
+    <h1>Traffic Monitor <span class="admin-tag">Admin</span></h1>
+  </div>
+  <div class="header-right">
+    <button class="hdr-btn" id="auto-scroll-btn" onclick="toggleAutoScroll()">Auto-scroll: ON</button>
+    <button class="hdr-btn" onclick="clearView()">Clear</button>
+  </div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat">
+    <span class="stat-label">Total:</span>
+    <span class="stat-val" id="stat-total">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Req/min:</span>
+    <span class="stat-val live" id="stat-rpm">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Source:</span>
+    <span class="stat-val" id="stat-source">Connecting...</span>
+  </div>
+</div>
+
+<div class="filter-bar">
+  <span class="filter-label">Filter:</span>
+  <select class="filter-select" id="filter-service" onchange="applyFilters()">
+    <option value="">All Services</option>
+  </select>
+  <select class="filter-select" id="filter-method" onchange="applyFilters()">
+    <option value="">All Methods</option>
+    <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
+  </select>
+  <input class="filter-input" id="filter-status" placeholder="Status" oninput="applyFilters()">
+</div>
+
+<div class="table-wrap" id="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th>
+        <th>Method</th>
+        <th>Service</th>
+        <th>Path</th>
+        <th>Status</th>
+        <th>Duration</th>
+        <th>Size</th>
+      </tr>
+    </thead>
+    <tbody id="traffic-body">
+    </tbody>
+  </table>
+  <div class="empty-state" id="empty-state">
+    <h3>Waiting for traffic...</h3>
+    <p>Requests through Warden Proxy will appear here in real-time.</p>
+  </div>
+</div>
+
+<script>
+(function() {
+  var allEntries = [];
+  var filteredEntries = [];
+  var expandedId = null;
+  var autoScroll = true;
+  var eventSource = null;
+  var recentTimestamps = []; // for RPM calculation
+  var knownServices = {};
+
+  // ── SSE / Polling ──
+  function connectSSE() {
+    document.getElementById('stat-source').textContent = 'Connecting...';
+    eventSource = new EventSource('/admin/api/traffic/stream');
+    eventSource.onopen = function() {
+      document.getElementById('stat-source').textContent = 'SSE (live)';
+      document.getElementById('stat-source').style.color = 'var(--success)';
+    };
+    eventSource.onmessage = function(e) {
+      try {
+        var entry = JSON.parse(e.data);
+        if (entry.type === 'lagged') return;
+        addEntry(entry);
+      } catch(ex) {}
+    };
+    eventSource.onerror = function() {
+      eventSource.close();
+      document.getElementById('stat-source').textContent = 'Polling (fallback)';
+      document.getElementById('stat-source').style.color = 'var(--warn)';
+      startPolling();
+    };
+  }
+
+  var pollTimer = null;
+  var lastPollTimestamp = 0;
+  function startPolling() {
+    pollTimer = setInterval(async function() {
+      try {
+        var url = '/admin/api/traffic' + (lastPollTimestamp ? '?since=' + lastPollTimestamp : '');
+        var resp = await fetch(url);
+        var entries = await resp.json();
+        entries.forEach(function(entry) {
+          if (!allEntries.some(function(e) { return e.id === entry.id; })) {
+            addEntry(entry);
+          }
+        });
+      } catch(e) {}
+    }, 2000);
+  }
+
+  // ── Initial load ──
+  async function loadInitial() {
+    try {
+      var resp = await fetch('/admin/api/traffic');
+      var entries = await resp.json();
+      entries.forEach(function(entry) { addEntry(entry, true); });
+      renderTable();
+    } catch(e) {}
+    connectSSE();
+  }
+
+  function addEntry(entry, batch) {
+    allEntries.push(entry);
+    if (allEntries.length > 1000) allEntries.shift();
+    if (entry.timestamp > lastPollTimestamp) lastPollTimestamp = entry.timestamp;
+
+    // Track services for filter
+    if (entry.service && !knownServices[entry.service]) {
+      knownServices[entry.service] = true;
+      updateServiceFilter();
+    }
+
+    // RPM tracking
+    recentTimestamps.push(Date.now());
+
+    if (!batch) {
+      applyFilters();
+    }
+  }
+
+  // ── Filters ──
+  window.applyFilters = function() {
+    var svc = document.getElementById('filter-service').value;
+    var method = document.getElementById('filter-method').value;
+    var status = document.getElementById('filter-status').value.trim();
+
+    filteredEntries = allEntries.filter(function(e) {
+      if (svc && e.service !== svc) return false;
+      if (method && e.method !== method) return false;
+      if (status && String(e.status).indexOf(status) === -1) return false;
+      return true;
+    });
+
+    renderTable();
+  };
+
+  function updateServiceFilter() {
+    var select = document.getElementById('filter-service');
+    var current = select.value;
+    select.innerHTML = '<option value="">All Services</option>';
+    Object.keys(knownServices).sort().forEach(function(s) {
+      var opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      select.appendChild(opt);
+    });
+    select.value = current;
+  }
+
+  // ── Rendering ──
+  function renderTable() {
+    var tbody = document.getElementById('traffic-body');
+    var empty = document.getElementById('empty-state');
+
+    if (!filteredEntries.length) {
+      tbody.innerHTML = '';
+      empty.style.display = 'block';
+      document.getElementById('stat-total').textContent = allEntries.length;
+      return;
+    }
+
+    empty.style.display = 'none';
+    document.getElementById('stat-total').textContent = allEntries.length;
+
+    // Render newest first
+    var html = '';
+    for (var i = filteredEntries.length - 1; i >= 0; i--) {
+      var e = filteredEntries[i];
+      var time = new Date(e.timestamp);
+      var timeStr = pad(time.getHours()) + ':' + pad(time.getMinutes()) + ':' + pad(time.getSeconds()) +
+        '.' + pad3(time.getMilliseconds());
+      var sClass = 's-' + Math.floor(e.status / 100) + 'xx';
+      var mClass = 'm-' + e.method;
+      var sizeStr = formatSize(e.request_size + e.response_size);
+      var isExpanded = e.id === expandedId;
+
+      html += '<tr class="clickable' + (isExpanded ? ' expanded' : '') + '" data-id="' + esc(e.id) + '">' +
+        '<td>' + timeStr + '</td>' +
+        '<td><span class="method-badge ' + mClass + '">' + esc(e.method) + '</span></td>' +
+        '<td class="td-service">' + esc(e.service) + '</td>' +
+        '<td class="td-path" title="' + esc(e.path) + '">' + esc(e.path || '/') + '</td>' +
+        '<td><span class="status-badge ' + sClass + '">' + e.status + '</span></td>' +
+        '<td class="td-dur">' + e.duration_ms + 'ms</td>' +
+        '<td class="td-size">' + sizeStr + '</td>' +
+        '</tr>';
+
+      if (isExpanded) {
+        html += '<tr class="detail-row"><td colspan="7">' +
+          '<div class="detail-grid">' +
+            '<div class="detail-section"><h4>Request Details</h4><div class="detail-kv">' +
+              'ID: ' + esc(e.id) + '\n' +
+              'Origin: ' + esc(e.origin) + '\n' +
+              'Request Size: ' + formatSize(e.request_size) + '\n' +
+              'Response Size: ' + formatSize(e.response_size) +
+            '</div></div>' +
+            '<div class="detail-section"><h4>Timing</h4><div class="detail-kv">' +
+              'Timestamp: ' + new Date(e.timestamp).toISOString() + '\n' +
+              'Duration: ' + e.duration_ms + 'ms\n' +
+              'Service: ' + esc(e.service) + '\n' +
+              'Full Path: ' + esc(e.method + ' /proxy/' + e.service + '/' + (e.path || '')) +
+            '</div></div>' +
+          '</div></td></tr>';
+      }
+    }
+
+    tbody.innerHTML = html;
+
+    // Add click handlers
+    tbody.querySelectorAll('tr.clickable').forEach(function(row) {
+      row.addEventListener('click', function() {
+        var id = row.dataset.id;
+        expandedId = (expandedId === id) ? null : id;
+        renderTable();
+      });
+    });
+
+    if (autoScroll) {
+      var wrap = document.getElementById('table-wrap');
+      wrap.scrollTop = 0; // newest at top
+    }
+  }
+
+  // ── Auto-scroll ──
+  window.toggleAutoScroll = function() {
+    autoScroll = !autoScroll;
+    var btn = document.getElementById('auto-scroll-btn');
+    btn.textContent = 'Auto-scroll: ' + (autoScroll ? 'ON' : 'OFF');
+    if (autoScroll) btn.classList.add('active');
+    else btn.classList.remove('active');
+  };
+  document.getElementById('auto-scroll-btn').classList.add('active');
+
+  // Pause auto-scroll on manual scroll
+  document.getElementById('table-wrap').addEventListener('scroll', function() {
+    // Only pause if user scrolled down (away from top)
+    if (this.scrollTop > 50 && autoScroll) {
+      autoScroll = false;
+      var btn = document.getElementById('auto-scroll-btn');
+      btn.textContent = 'Auto-scroll: OFF';
+      btn.classList.remove('active');
+    }
+  });
+
+  window.clearView = function() {
+    allEntries = [];
+    filteredEntries = [];
+    expandedId = null;
+    recentTimestamps = [];
+    renderTable();
+  };
+
+  // ── RPM counter ──
+  setInterval(function() {
+    var now = Date.now();
+    var oneMinAgo = now - 60000;
+    recentTimestamps = recentTimestamps.filter(function(t) { return t > oneMinAgo; });
+    document.getElementById('stat-rpm').textContent = recentTimestamps.length;
+  }, 1000);
+
+  // ── Helpers ──
+  function pad(n) { return n < 10 ? '0' + n : '' + n; }
+  function pad3(n) { return n < 10 ? '00' + n : n < 100 ? '0' + n : '' + n; }
+  function formatSize(bytes) {
+    if (!bytes) return '-';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+  function esc(s) {
+    if (!s) return '';
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // ── Init ──
+  loadInitial();
+})();
+</script>
+</body>
+</html>

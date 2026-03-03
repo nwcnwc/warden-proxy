@@ -300,6 +300,36 @@ async fn handle_http(
                 method, service_name, target_path, status.as_u16(), duration.as_millis()
             );
 
+            // Log to traffic monitor
+            {
+                let response_size = resp.headers()
+                    .get("content-length")
+                    .and_then(|v| v.to_str().ok())
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .unwrap_or(0);
+                let entry = crate::RequestLog {
+                    id: request_id.clone(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                    method: method.to_string(),
+                    service: service_name.clone(),
+                    path: target_path.to_string(),
+                    origin: origin.clone(),
+                    status: status.as_u16(),
+                    duration_ms: duration.as_millis() as u64,
+                    request_size: body_bytes.len() as u64,
+                    response_size,
+                };
+                {
+                    let mut log = state.traffic_log.write().await;
+                    if log.len() >= 1000 { log.pop_front(); }
+                    log.push_back(entry.clone());
+                }
+                let _ = state.traffic_tx.send(entry);
+            }
+
             // Stream the response body instead of buffering it
             let stream = resp.bytes_stream()
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
@@ -317,6 +347,31 @@ async fn handle_http(
                 request_id = %request_id,
                 "Proxy error: {} - {} ({}ms)", service_name, e, duration.as_millis()
             );
+
+            // Log error to traffic monitor
+            {
+                let entry = crate::RequestLog {
+                    id: request_id.clone(),
+                    timestamp: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as u64,
+                    method: method.to_string(),
+                    service: service_name.clone(),
+                    path: target_path.to_string(),
+                    origin: origin.clone(),
+                    status: 502,
+                    duration_ms: duration.as_millis() as u64,
+                    request_size: body_bytes.len() as u64,
+                    response_size: 0,
+                };
+                {
+                    let mut log = state.traffic_log.write().await;
+                    if log.len() >= 1000 { log.pop_front(); }
+                    log.push_back(entry.clone());
+                }
+                let _ = state.traffic_tx.send(entry);
+            }
 
             let error_msg = if e.is_timeout() {
                 format!("Request to {} timed out after {}s", service_name, timeout_secs)

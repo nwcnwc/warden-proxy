@@ -33,487 +33,238 @@
     flex-direction: column;
   }
 
-  /* ── Header ── */
   .header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 20px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-shrink: 0;
   }
-
-  .header-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .back-link {
-    color: var(--text-muted);
-    text-decoration: none;
-    font-size: 14px;
-  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .back-link { color: var(--text-muted); text-decoration: none; font-size: 14px; }
   .back-link:hover { color: var(--accent); }
-
   .header h1 { font-size: 16px; font-weight: 600; }
+  .header-right { display: flex; align-items: center; gap: 8px; }
 
-  /* ── Layout ── */
-  .main {
-    flex: 1;
-    display: flex;
-    overflow: hidden;
+  .hdr-btn {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+    transition: all 0.2s; line-height: 1; font-family: inherit;
   }
+  .hdr-btn:hover { border-color: var(--accent-border); color: var(--text); }
+
+  /* Layout */
+  .main { flex: 1; display: flex; overflow: hidden; }
 
   .sidebar {
-    width: 260px;
-    border-right: 1px solid var(--border);
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    flex-shrink: 0;
+    width: 260px; border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; background: var(--surface); flex-shrink: 0;
   }
-
   .sidebar-header {
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
   }
-
-  .sidebar-header h3 {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-  }
-
-  .sidebar-clear {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 12px;
-    cursor: pointer;
-  }
+  .sidebar-header h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+  .sidebar-clear { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; }
   .sidebar-clear:hover { color: var(--danger); }
 
-  .history-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px;
-  }
-
+  .history-list { flex: 1; overflow-y: auto; padding: 8px; }
   .history-item {
-    padding: 8px 12px;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: background 0.15s;
-    margin-bottom: 2px;
+    padding: 8px 12px; border-radius: 6px; cursor: pointer; font-size: 13px;
+    display: flex; align-items: center; gap: 8px; transition: background 0.15s; margin-bottom: 2px;
   }
-
   .history-item:hover { background: var(--surface-hover); }
-
   .history-method {
-    font-size: 10px;
-    font-weight: 700;
-    padding: 2px 5px;
-    border-radius: 3px;
-    min-width: 36px;
-    text-align: center;
+    font-size: 10px; font-weight: 700; padding: 2px 5px; border-radius: 3px;
+    min-width: 36px; text-align: center;
   }
+  .method-GET { background: rgba(96,165,250,0.2); color: #60a5fa; }
+  .method-POST { background: rgba(0,255,136,0.2); color: #00ff88; }
+  .method-PUT { background: rgba(255,170,0,0.2); color: #ffaa00; }
+  .method-DELETE { background: rgba(255,68,68,0.2); color: #ff4444; }
+  .method-PATCH { background: rgba(168,85,247,0.2); color: #a855f7; }
+  .history-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-muted); }
+  .history-empty { text-align: center; padding: 24px 16px; color: var(--text-muted); font-size: 13px; }
 
-  .method-GET { background: rgba(96, 165, 250, 0.2); color: #60a5fa; }
-  .method-POST { background: rgba(0, 255, 136, 0.2); color: #00ff88; }
-  .method-PUT { background: rgba(255, 170, 0, 0.2); color: #ffaa00; }
-  .method-DELETE { background: rgba(255, 68, 68, 0.2); color: #ff4444; }
-  .method-PATCH { background: rgba(168, 85, 247, 0.2); color: #a855f7; }
-
-  .history-path {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-muted);
-  }
-
-  .history-empty {
-    text-align: center;
-    padding: 24px 16px;
-    color: var(--text-muted);
-    font-size: 13px;
-  }
-
-  /* ── Request Panel ── */
-  .content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
+  /* Request */
+  .content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
   .request-bar {
-    display: flex;
-    gap: 8px;
-    padding: 16px 20px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
+    display: flex; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border);
+    background: var(--surface); flex-wrap: wrap;
   }
-
   .method-select {
-    background: var(--bg);
-    color: var(--accent);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-weight: 600;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
+    background: var(--bg); color: var(--accent); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-weight: 600; font-family: inherit; font-size: 13px; cursor: pointer;
   }
-
   .service-select {
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 10px;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    min-width: 120px;
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 10px; font-family: inherit; font-size: 13px; cursor: pointer; min-width: 120px;
   }
-
   .path-input {
-    flex: 1;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 13px;
+    flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
+    min-width: 200px;
   }
-
-  .path-input:focus {
-    outline: none;
-    border-color: var(--accent);
-  }
-
+  .path-input:focus { outline: none; border-color: var(--accent); }
   .send-btn {
-    background: var(--accent);
-    color: #0a0a0a;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 20px;
-    font-weight: 600;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    transition: opacity 0.2s;
+    background: var(--accent); color: #0a0a0a; border: none; border-radius: 6px;
+    padding: 8px 20px; font-weight: 600; font-family: inherit; font-size: 13px;
+    cursor: pointer; transition: opacity 0.2s;
   }
   .send-btn:hover { opacity: 0.85; }
   .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  /* ── Tabs ── */
-  .panels {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .tab-bar {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    padding: 0 20px;
-  }
-
-  .tab {
-    padding: 10px 16px;
+  /* Response time badge */
+  .response-time-badge {
+    display: none; align-items: center; gap: 6px; padding: 6px 14px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
     font-size: 13px;
-    color: var(--text-muted);
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
-    background: none;
-    border-top: none;
-    border-left: none;
-    border-right: none;
-    font-family: inherit;
   }
+  .response-time-badge.visible { display: flex; }
+  .rt-status { font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+  .rt-status.s2 { background: rgba(0,255,136,0.15); color: var(--accent); }
+  .rt-status.s3 { background: rgba(96,165,250,0.15); color: var(--info); }
+  .rt-status.s4 { background: rgba(255,170,0,0.15); color: var(--warn); }
+  .rt-status.s5 { background: rgba(255,68,68,0.15); color: var(--danger); }
+  .rt-time { font-weight: 600; color: var(--accent); }
+  .rt-size { color: var(--text-muted); }
 
+  /* Tabs */
+  .panels { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+  .tab-bar {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border);
+    background: var(--surface); padding: 0 20px;
+  }
+  .tab {
+    padding: 10px 16px; font-size: 13px; color: var(--text-muted); cursor: pointer;
+    border-bottom: 2px solid transparent; transition: all 0.2s;
+    background: none; border-top: none; border-left: none; border-right: none; font-family: inherit;
+  }
   .tab:hover { color: var(--text); }
   .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-
-  .tab-panels {
-    flex: 1;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .tab-panel {
-    display: none;
-    position: absolute;
-    inset: 0;
-    overflow: auto;
-    padding: 16px 20px;
-  }
-
+  .tab-panels { flex: 1; overflow: hidden; position: relative; }
+  .tab-panel { display: none; position: absolute; inset: 0; overflow: auto; padding: 16px 20px; }
   .tab-panel.active { display: block; }
 
-  /* ── Editors ── */
+  /* Editors */
   .editor-label {
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-    display: block;
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--text-muted); margin-bottom: 6px; display: flex; align-items: center;
+    justify-content: space-between;
   }
-
   textarea.editor {
-    width: 100%;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 12px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 13px;
-    line-height: 1.5;
-    resize: vertical;
+    width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px; font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 13px; line-height: 1.5; resize: vertical;
   }
-
-  textarea.editor:focus {
-    outline: none;
-    border-color: var(--accent);
-  }
-
+  textarea.editor:focus { outline: none; border-color: var(--accent); }
   .headers-editor { min-height: 120px; }
   .body-editor { min-height: 200px; }
 
-  /* ── Response ── */
-  .response-header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-    flex-wrap: wrap;
+  .prettify-btn {
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 4px; padding: 2px 8px; cursor: pointer; font-size: 11px; font-family: inherit;
   }
+  .prettify-btn:hover { color: var(--text); border-color: var(--accent-border); }
 
-  .status-code {
-    font-size: 14px;
-    font-weight: 700;
-    padding: 4px 10px;
-    border-radius: 4px;
+  /* cURL Import */
+  .curl-section {
+    border-top: 1px solid var(--border); margin-top: 16px; padding-top: 16px;
   }
-
-  .status-2xx { background: rgba(0, 255, 136, 0.15); color: var(--accent); }
-  .status-3xx { background: rgba(96, 165, 250, 0.15); color: var(--info); }
-  .status-4xx { background: rgba(255, 170, 0, 0.15); color: var(--warn); }
-  .status-5xx { background: rgba(255, 68, 68, 0.15); color: var(--danger); }
-
-  .response-meta {
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-
-  .response-body {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 16px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
+  .curl-section label { display: block; margin-bottom: 6px; }
+  .curl-row { display: flex; gap: 8px; }
+  .curl-input {
+    flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-family: 'SF Mono', 'Fira Code', monospace;
     font-size: 13px;
-    line-height: 1.5;
-    overflow: auto;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: calc(100vh - 360px);
   }
-
-  .response-empty {
-    text-align: center;
-    padding: 40px;
-    color: var(--text-muted);
+  .curl-input:focus { outline: none; border-color: var(--accent); }
+  .curl-import-btn {
+    background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent-border);
+    border-radius: 6px; padding: 8px 14px; cursor: pointer; font-family: inherit;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
   }
+  .curl-import-btn:hover { background: rgba(0,255,136,0.2); }
 
-  /* Syntax highlighting for JSON */
+  /* Response */
+  .response-body {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 16px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
+    line-height: 1.5; overflow: auto; white-space: pre-wrap; word-break: break-word;
+    max-height: calc(100vh - 300px);
+  }
+  .response-empty { text-align: center; padding: 40px; color: var(--text-muted); }
+
   .json-key { color: #60a5fa; }
   .json-string { color: #fbbf24; }
   .json-number { color: var(--accent); }
   .json-bool { color: #f472b6; }
   .json-null { color: var(--text-muted); }
 
-  @media (max-width: 768px) {
-    .sidebar { display: none; }
-    .request-bar { flex-wrap: wrap; }
-  }
-
-  /* ── Settings Modal ── */
-  .settings-btn {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    border-radius: 6px;
-    padding: 6px 10px;
-    cursor: pointer;
-    font-size: 15px;
-    transition: all 0.2s;
-    line-height: 1;
-  }
-  .settings-btn:hover {
-    border-color: var(--accent-border);
-    color: var(--text);
-  }
-
+  /* Settings Modal */
   .settings-overlay {
-    display: none;
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.7);
-    z-index: 1000;
-    align-items: center;
-    justify-content: center;
-    backdrop-filter: blur(4px);
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(4px);
   }
   .settings-overlay.open { display: flex; }
-
   .settings-modal {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    width: 480px;
-    max-width: 95vw;
-    max-height: 90vh;
-    overflow-y: auto;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    animation: modalIn 0.2s ease-out;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    width: 480px; max-width: 95vw; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: modalIn 0.2s ease-out;
   }
-
   @keyframes modalIn {
     from { opacity: 0; transform: scale(0.95) translateY(10px); }
     to { opacity: 1; transform: scale(1) translateY(0); }
   }
-
   .settings-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
   }
   .settings-header h2 { font-size: 16px; font-weight: 600; }
-
   .settings-close {
-    background: none;
-    border: none;
-    color: var(--text-muted);
-    font-size: 20px;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    line-height: 1;
+    background: none; border: none; color: var(--text-muted); font-size: 20px;
+    cursor: pointer; padding: 4px 8px; border-radius: 4px; line-height: 1;
   }
   .settings-close:hover { color: var(--text); background: var(--surface-hover); }
-
   .settings-body { padding: 24px; }
-
-  .settings-intro {
-    color: var(--text-muted);
-    font-size: 13px;
-    margin-bottom: 20px;
-    line-height: 1.5;
-  }
-
+  .settings-intro { color: var(--text-muted); font-size: 13px; margin-bottom: 20px; line-height: 1.5; }
   .key-section { margin-bottom: 20px; }
   .key-section:last-child { margin-bottom: 0; }
-
-  .key-label {
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 6px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .key-status {
-    font-size: 11px;
-    font-weight: 400;
-    padding: 2px 6px;
-    border-radius: 3px;
-  }
-  .key-status.set { background: rgba(0, 255, 136, 0.15); color: var(--accent); }
-  .key-status.unset { background: rgba(255, 170, 0, 0.15); color: #ffaa00; }
-
+  .key-label { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .key-status { font-size: 11px; font-weight: 400; padding: 2px 6px; border-radius: 3px; }
+  .key-status.set { background: rgba(0,255,136,0.15); color: var(--accent); }
+  .key-status.unset { background: rgba(255,170,0,0.15); color: #ffaa00; }
   .key-input-row { display: flex; gap: 6px; }
-
   .key-input {
-    flex: 1;
-    background: var(--bg);
-    color: var(--text);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-family: 'SF Mono', 'Fira Code', monospace;
-    font-size: 13px;
+    flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px;
   }
   .key-input:focus { outline: none; border-color: var(--accent); }
   .key-input::placeholder { color: var(--text-muted); opacity: 0.5; }
-
   .key-toggle {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    border-radius: 6px;
-    padding: 8px 10px;
-    cursor: pointer;
-    font-size: 13px;
-    min-width: 38px;
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 6px; padding: 8px 10px; cursor: pointer; font-size: 13px; min-width: 38px;
   }
   .key-toggle:hover { color: var(--text); border-color: var(--accent-border); }
-
   .settings-footer {
-    padding: 16px 24px;
-    border-top: 1px solid var(--border);
-    display: flex;
-    justify-content: flex-end;
-    gap: 10px;
+    padding: 16px 24px; border-top: 1px solid var(--border);
+    display: flex; justify-content: flex-end; gap: 10px;
   }
-
   .settings-save-btn {
-    background: var(--accent);
-    color: #0a0a0a;
-    border: none;
-    border-radius: 6px;
-    padding: 8px 20px;
-    font-weight: 600;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
-    transition: opacity 0.2s;
+    background: var(--accent); color: #0a0a0a; border: none; border-radius: 6px;
+    padding: 8px 20px; font-weight: 600; font-family: inherit; font-size: 13px;
+    cursor: pointer; transition: opacity 0.2s;
   }
   .settings-save-btn:hover { opacity: 0.85; }
-
   .settings-cancel-btn {
-    background: none;
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    border-radius: 6px;
-    padding: 8px 16px;
-    font-family: inherit;
-    font-size: 13px;
-    cursor: pointer;
+    background: none; border: 1px solid var(--border); color: var(--text-muted);
+    border-radius: 6px; padding: 8px 16px; font-family: inherit; font-size: 13px; cursor: pointer;
   }
   .settings-cancel-btn:hover { color: var(--text); border-color: var(--accent-border); }
+
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .request-bar { flex-wrap: wrap; }
+  }
 </style>
 </head>
 <body>
@@ -524,7 +275,7 @@
     <h1>API Tester</h1>
   </div>
   <div class="header-right">
-    <button class="settings-btn" onclick="toggleSettings()" title="API Keys">&#9881;</button>
+    <button class="hdr-btn" onclick="toggleSettings()" title="API Keys">&#9881;</button>
   </div>
 </div>
 
@@ -540,21 +291,21 @@
         <div class="key-label">OpenAI <span class="key-status unset" id="status-openai">not set</span></div>
         <div class="key-input-row">
           <input class="key-input" type="password" id="key-openai" placeholder="sk-...">
-          <button class="key-toggle" onclick="toggleKeyVis('openai')" title="Show/hide key">&#128065;</button>
+          <button class="key-toggle" onclick="toggleKeyVis('openai')">&#128065;</button>
         </div>
       </div>
       <div class="key-section">
         <div class="key-label">Anthropic <span class="key-status unset" id="status-anthropic">not set</span></div>
         <div class="key-input-row">
           <input class="key-input" type="password" id="key-anthropic" placeholder="sk-ant-...">
-          <button class="key-toggle" onclick="toggleKeyVis('anthropic')" title="Show/hide key">&#128065;</button>
+          <button class="key-toggle" onclick="toggleKeyVis('anthropic')">&#128065;</button>
         </div>
       </div>
       <div class="key-section">
         <div class="key-label">Google <span class="key-status unset" id="status-google">not set</span></div>
         <div class="key-input-row">
           <input class="key-input" type="password" id="key-google" placeholder="AIza...">
-          <button class="key-toggle" onclick="toggleKeyVis('google')" title="Show/hide key">&#128065;</button>
+          <button class="key-toggle" onclick="toggleKeyVis('google')">&#128065;</button>
         </div>
       </div>
     </div>
@@ -579,24 +330,26 @@
   <div class="content">
     <div class="request-bar">
       <select class="method-select" id="method">
-        <option>GET</option>
-        <option selected>POST</option>
-        <option>PUT</option>
-        <option>PATCH</option>
-        <option>DELETE</option>
+        <option>GET</option><option selected>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
       </select>
-      <select class="service-select" id="service">
-        <option value="">Loading...</option>
-      </select>
+      <select class="service-select" id="service"><option value="">Loading...</option></select>
       <input class="path-input" id="path" type="text" placeholder="/v1/chat/completions" value="/v1/chat/completions">
       <button class="send-btn" id="send-btn" onclick="sendRequest()">Send</button>
+    </div>
+
+    <div class="response-time-badge" id="rt-badge">
+      <span class="rt-status" id="rt-status"></span>
+      <span class="rt-time" id="rt-time"></span>
+      <span class="rt-size" id="rt-size"></span>
     </div>
 
     <div class="panels">
       <div class="tab-bar">
         <button class="tab active" data-tab="headers">Headers</button>
         <button class="tab" data-tab="body">Body</button>
-        <button class="tab" data-tab="response">Response</button>
+        <button class="tab" data-tab="curl">cURL Import</button>
+        <button class="tab" data-tab="resp-headers">Response Headers</button>
+        <button class="tab" data-tab="response">Response Body</button>
       </div>
 
       <div class="tab-panels">
@@ -606,7 +359,10 @@
         </div>
 
         <div class="tab-panel" id="tab-body">
-          <label class="editor-label">Request Body (JSON)</label>
+          <label class="editor-label">
+            <span>Request Body (JSON)</span>
+            <button class="prettify-btn" onclick="prettifyBody()">Prettify JSON</button>
+          </label>
           <textarea class="editor body-editor" id="body">{
   "model": "gpt-4o",
   "messages": [
@@ -615,16 +371,30 @@
 }</textarea>
         </div>
 
+        <div class="tab-panel" id="tab-curl">
+          <label class="editor-label">Import from cURL</label>
+          <p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Paste a curl command to auto-fill the request fields.</p>
+          <div class="curl-row">
+            <input class="curl-input" id="curl-input" placeholder="curl -X POST https://api.openai.com/v1/chat/completions -H 'Content-Type: application/json' -d '{...}'">
+            <button class="curl-import-btn" onclick="importCurl()">Import</button>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-resp-headers">
+          <div class="response-empty" id="resp-headers-empty">Send a request to see response headers</div>
+          <div id="resp-headers-content" style="display:none;">
+            <label class="editor-label">Response Headers</label>
+            <div class="response-body" id="resp-headers" style="max-height: calc(100vh - 300px);"></div>
+          </div>
+        </div>
+
         <div class="tab-panel" id="tab-response">
           <div class="response-empty" id="response-empty">Send a request to see the response</div>
           <div id="response-content" style="display:none;">
-            <div class="response-header">
-              <span class="status-code" id="resp-status"></span>
-              <span class="response-meta" id="resp-meta"></span>
-            </div>
-            <label class="editor-label">Response Headers</label>
-            <div class="response-body" id="resp-headers" style="max-height:150px;margin-bottom:12px;"></div>
-            <label class="editor-label">Response Body</label>
+            <label class="editor-label">
+              <span>Response Body</span>
+              <button class="prettify-btn" onclick="prettifyResponse()">Prettify JSON</button>
+            </label>
             <div class="response-body" id="resp-body"></div>
           </div>
         </div>
@@ -636,25 +406,20 @@
 <script src="/client/warden-loader.js"></script>
 <script>
 (function() {
-  const HISTORY_KEY = 'warden-api-tester-history';
-  const MAX_HISTORY = 50;
+  var HISTORY_KEY = 'warden-api-tester-history';
+  var MAX_HISTORY = 50;
+  var lastResponseBody = '';
 
-  // ── API Key Management ──
-  const API_KEYS_STORAGE = 'api-tester-api-keys';
-  const KEY_HEADERS = {
+  // ── API Keys ──
+  var API_KEYS_STORAGE = 'api-tester-api-keys';
+  var KEY_HEADERS = {
     openai: { header: 'Authorization', prefix: 'Bearer ' },
     anthropic: { header: 'x-api-key', prefix: '' },
     google: { header: 'x-goog-api-key', prefix: '' }
   };
 
-  function loadApiKeys() {
-    try { return JSON.parse(localStorage.getItem(API_KEYS_STORAGE) || '{}'); }
-    catch(e) { return {}; }
-  }
-
-  function saveApiKeysToStorage(keys) {
-    localStorage.setItem(API_KEYS_STORAGE, JSON.stringify(keys));
-  }
+  function loadApiKeys() { try { return JSON.parse(localStorage.getItem(API_KEYS_STORAGE) || '{}'); } catch(e) { return {}; } }
+  function saveApiKeysToStorage(k) { localStorage.setItem(API_KEYS_STORAGE, JSON.stringify(k)); }
 
   window.toggleSettings = function(forceOpen) {
     var overlay = document.getElementById('settings-overlay');
@@ -665,27 +430,16 @@
         document.getElementById('key-' + p).value = keys[p] || '';
         document.getElementById('key-' + p).type = 'password';
         var status = document.getElementById('status-' + p);
-        if (keys[p]) {
-          status.textContent = 'configured';
-          status.className = 'key-status set';
-        } else {
-          status.textContent = 'not set';
-          status.className = 'key-status unset';
-        }
+        if (keys[p]) { status.textContent = 'configured'; status.className = 'key-status set'; }
+        else { status.textContent = 'not set'; status.className = 'key-status unset'; }
       });
-      overlay.style.display = '';
       overlay.classList.add('open');
-    } else {
-      overlay.classList.remove('open');
-      overlay.style.display = 'none';
-    }
+    } else { overlay.classList.remove('open'); }
   };
-
   window.toggleKeyVis = function(provider) {
     var input = document.getElementById('key-' + provider);
     input.type = input.type === 'password' ? 'text' : 'password';
   };
-
   window.saveSettings = function() {
     var keys = {};
     ['openai', 'anthropic', 'google'].forEach(function(p) {
@@ -694,23 +448,18 @@
     });
     saveApiKeysToStorage(keys);
     updateServiceLabels();
-    var overlay = document.getElementById('settings-overlay');
-    overlay.classList.remove('open');
-    overlay.style.display = 'none';
+    document.getElementById('settings-overlay').classList.remove('open');
   };
 
   function updateServiceLabels() {
     var select = document.getElementById('service');
     var keys = loadApiKeys();
     Array.from(select.options).forEach(function(opt) {
-      if (opt.value) {
-        var suffix = keys[opt.value] ? '' : ' (no key)';
-        opt.textContent = opt.value + suffix;
-      }
+      if (opt.value) { opt.textContent = opt.value + (keys[opt.value] ? '' : ' (no key)'); }
     });
   }
 
-  // Tab switching
+  // ── Tabs ──
   document.querySelectorAll('.tab').forEach(function(tab) {
     tab.addEventListener('click', function() {
       document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
@@ -720,7 +469,7 @@
     });
   });
 
-  // Load services
+  // ── Services ──
   async function loadServices() {
     var select = document.getElementById('service');
     try {
@@ -732,67 +481,143 @@
       services.forEach(function(s) {
         var opt = document.createElement('option');
         opt.value = s;
-        var suffix = savedKeys[s] ? '' : ' (no key)';
-        opt.textContent = s + suffix;
+        opt.textContent = s + (savedKeys[s] ? '' : ' (no key)');
         select.appendChild(opt);
       });
-      if (services.length === 0) {
-        select.innerHTML = '<option value="">No services</option>';
-      }
+      if (!services.length) select.innerHTML = '<option value="">No services</option>';
     } catch(e) {
       select.innerHTML = '<option value="openai">openai</option><option value="anthropic">anthropic</option>';
     }
   }
 
-  // JSON syntax highlighting
+  // ── JSON ──
   function highlightJSON(str) {
-    try {
-      var obj = typeof str === 'string' ? JSON.parse(str) : str;
-      str = JSON.stringify(obj, null, 2);
-    } catch(e) {
-      return escapeHtml(str);
-    }
-
+    try { var obj = typeof str === 'string' ? JSON.parse(str) : str; str = JSON.stringify(obj, null, 2); } catch(e) { return escapeHtml(str); }
     return str.replace(
       /("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g,
       function(match) {
         var cls = 'json-number';
         if (/^"/.test(match)) {
-          if (/:$/.test(match)) {
-            cls = 'json-key';
-            return '<span class="' + cls + '">' + escapeHtml(match.replace(/:$/, '')) + '</span>:';
-          }
+          if (/:$/.test(match)) { cls = 'json-key'; return '<span class="' + cls + '">' + escapeHtml(match.replace(/:$/, '')) + '</span>:'; }
           cls = 'json-string';
-        } else if (/true|false/.test(match)) {
-          cls = 'json-bool';
-        } else if (/null/.test(match)) {
-          cls = 'json-null';
-        }
+        } else if (/true|false/.test(match)) cls = 'json-bool';
+        else if (/null/.test(match)) cls = 'json-null';
         return '<span class="' + cls + '">' + escapeHtml(match) + '</span>';
       }
     );
   }
 
-  function escapeHtml(str) {
-    var div = document.createElement('div');
-    div.textContent = str;
-    return div.innerHTML;
-  }
+  function escapeHtml(str) { var d = document.createElement('div'); d.textContent = str; return d.innerHTML; }
 
   function parseHeaders(text) {
     var headers = {};
     text.split('\n').forEach(function(line) {
-      line = line.trim();
-      if (!line) return;
+      line = line.trim(); if (!line) return;
       var idx = line.indexOf(':');
-      if (idx > 0) {
-        headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
-      }
+      if (idx > 0) headers[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
     });
     return headers;
   }
 
-  // Send request
+  // ── Prettify ──
+  window.prettifyBody = function() {
+    var el = document.getElementById('body');
+    try { el.value = JSON.stringify(JSON.parse(el.value), null, 2); } catch(e) {}
+  };
+  window.prettifyResponse = function() {
+    if (!lastResponseBody) return;
+    try {
+      var formatted = JSON.stringify(JSON.parse(lastResponseBody), null, 2);
+      document.getElementById('resp-body').innerHTML = highlightJSON(formatted);
+    } catch(e) {}
+  };
+
+  // ── cURL Import ──
+  window.importCurl = function() {
+    var raw = document.getElementById('curl-input').value.trim();
+    if (!raw) return;
+
+    // Normalize line continuations
+    raw = raw.replace(/\\\n\s*/g, ' ').replace(/\\\r\n\s*/g, ' ');
+
+    var method = 'GET';
+    var url = '';
+    var headers = {};
+    var body = '';
+
+    // Extract method
+    var methodMatch = raw.match(/-X\s+(\w+)/);
+    if (methodMatch) method = methodMatch[1].toUpperCase();
+
+    // Extract URL (first bare argument or after curl)
+    var urlMatch = raw.match(/curl\s+(?:(?:-[^\s]+\s+(?:'[^']*'|"[^"]*"|\S+)\s+)*)?['"]?(https?:\/\/[^\s'"]+)['"]?/);
+    if (!urlMatch) urlMatch = raw.match(/(https?:\/\/[^\s'"]+)/);
+    if (urlMatch) url = urlMatch[1];
+
+    // Extract headers
+    var headerRe = /-H\s+['"]([^'"]+)['"]/g;
+    var hMatch;
+    while ((hMatch = headerRe.exec(raw)) !== null) {
+      var idx = hMatch[1].indexOf(':');
+      if (idx > 0) headers[hMatch[1].substring(0, idx).trim()] = hMatch[1].substring(idx + 1).trim();
+    }
+
+    // Extract body (-d or --data)
+    var bodyMatch = raw.match(/(?:-d|--data|--data-raw)\s+'((?:[^'\\]|\\.)*)'/);
+    if (!bodyMatch) bodyMatch = raw.match(/(?:-d|--data|--data-raw)\s+"((?:[^"\\]|\\.)*)"/);
+    if (!bodyMatch) bodyMatch = raw.match(/(?:-d|--data|--data-raw)\s+(\S+)/);
+    if (bodyMatch) {
+      body = bodyMatch[1];
+      if (!methodMatch) method = 'POST';
+    }
+
+    // Try to match service from URL
+    var select = document.getElementById('service');
+    var path = '';
+    var matched = false;
+
+    // Check against known service base URLs from /routes
+    Array.from(select.options).forEach(function(opt) {
+      if (matched || !opt.value) return;
+      // Try common patterns
+      var patterns = {
+        openai: 'api.openai.com',
+        anthropic: 'api.anthropic.com',
+        google: 'generativelanguage.googleapis.com'
+      };
+      if (patterns[opt.value] && url.indexOf(patterns[opt.value]) !== -1) {
+        select.value = opt.value;
+        var urlObj;
+        try { urlObj = new URL(url); } catch(e) { return; }
+        path = urlObj.pathname + urlObj.search;
+        matched = true;
+      }
+    });
+
+    if (!matched && url) {
+      try {
+        var urlObj = new URL(url);
+        path = urlObj.pathname + urlObj.search;
+      } catch(e) { path = url; }
+    }
+
+    document.getElementById('method').value = method;
+    document.getElementById('path').value = path;
+    document.getElementById('headers').value = Object.keys(headers).map(function(k) { return k + ': ' + headers[k]; }).join('\n') || 'Content-Type: application/json';
+
+    if (body) {
+      try { body = JSON.stringify(JSON.parse(body), null, 2); } catch(e) {}
+      document.getElementById('body').value = body;
+    }
+
+    // Switch to headers tab
+    document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+    document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
+    document.querySelector('[data-tab="headers"]').classList.add('active');
+    document.getElementById('tab-headers').classList.add('active');
+  };
+
+  // ── Send Request ──
   window.sendRequest = async function() {
     var method = document.getElementById('method').value;
     var service = document.getElementById('service').value;
@@ -806,32 +631,19 @@
     var url = '/proxy/' + service + path;
     var headers = parseHeaders(headersText);
 
-    // Inject API key if configured (user's custom headers take precedence)
     var apiKeys = loadApiKeys();
     if (apiKeys[service] && KEY_HEADERS[service]) {
       var kh = KEY_HEADERS[service];
-      var headerName = kh.header;
-      // Only inject if user hasn't manually set this header
-      var hasCustom = Object.keys(headers).some(function(k) {
-        return k.toLowerCase() === headerName.toLowerCase();
-      });
-      if (!hasCustom) {
-        headers[headerName] = kh.prefix + apiKeys[service];
-      }
+      var hasCustom = Object.keys(headers).some(function(k) { return k.toLowerCase() === kh.header.toLowerCase(); });
+      if (!hasCustom) headers[kh.header] = kh.prefix + apiKeys[service];
     }
 
-    var fetchOpts = {
-      method: method,
-      headers: headers
-    };
-
-    if (method !== 'GET' && method !== 'HEAD' && bodyText.trim()) {
-      fetchOpts.body = bodyText;
-    }
+    var fetchOpts = { method: method, headers: headers };
+    if (method !== 'GET' && method !== 'HEAD' && bodyText.trim()) fetchOpts.body = bodyText;
 
     document.getElementById('send-btn').disabled = true;
 
-    // Switch to response tab
+    // Switch to response body tab
     document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
     document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
     document.querySelector('[data-tab="response"]').classList.add('active');
@@ -843,135 +655,96 @@
       var resp = await fetch(url, fetchOpts);
       var elapsed = Math.round(performance.now() - startTime);
       var respBody = await resp.text();
+      lastResponseBody = respBody;
 
-      // Show response
-      document.getElementById('response-empty').style.display = 'none';
-      document.getElementById('response-content').style.display = 'block';
-
-      var statusEl = document.getElementById('resp-status');
+      // Response time badge
+      var badge = document.getElementById('rt-badge');
+      badge.classList.add('visible');
+      var statusEl = document.getElementById('rt-status');
       statusEl.textContent = resp.status + ' ' + resp.statusText;
-      var cls = 'status-' + Math.floor(resp.status / 100) + 'xx';
-      statusEl.className = 'status-code ' + cls;
-
+      var sClass = 's' + Math.floor(resp.status / 100);
+      statusEl.className = 'rt-status ' + sClass;
+      document.getElementById('rt-time').textContent = elapsed + 'ms';
       var size = respBody.length;
-      var sizeStr = size > 1024 ? (size / 1024).toFixed(1) + ' KB' : size + ' B';
-      document.getElementById('resp-meta').textContent = elapsed + 'ms | ' + sizeStr;
+      document.getElementById('rt-size').textContent = size > 1024 ? (size / 1024).toFixed(1) + ' KB' : size + ' B';
 
-      // Response headers
+      // Response headers tab
+      document.getElementById('resp-headers-empty').style.display = 'none';
+      document.getElementById('resp-headers-content').style.display = 'block';
       var respHeaders = [];
-      resp.headers.forEach(function(v, k) {
-        respHeaders.push(k + ': ' + v);
-      });
+      resp.headers.forEach(function(v, k) { respHeaders.push(k + ': ' + v); });
       document.getElementById('resp-headers').textContent = respHeaders.join('\n');
 
-      // Response body with syntax highlighting
-      var bodyEl = document.getElementById('resp-body');
-      var contentType = resp.headers.get('content-type') || '';
-      if (contentType.indexOf('json') !== -1) {
-        bodyEl.innerHTML = highlightJSON(respBody);
-      } else {
-        bodyEl.textContent = respBody;
-      }
-
-      // Save to history
-      saveHistory({
-        method: method,
-        service: service,
-        path: path,
-        headers: headersText,
-        body: bodyText,
-        status: resp.status,
-        timestamp: Date.now()
-      });
-
-    } catch(e) {
+      // Response body
       document.getElementById('response-empty').style.display = 'none';
       document.getElementById('response-content').style.display = 'block';
-      var statusEl = document.getElementById('resp-status');
-      statusEl.textContent = 'Error';
-      statusEl.className = 'status-code status-5xx';
-      document.getElementById('resp-meta').textContent = '';
-      document.getElementById('resp-headers').textContent = '';
+      var bodyEl = document.getElementById('resp-body');
+      var contentType = resp.headers.get('content-type') || '';
+      if (contentType.indexOf('json') !== -1) bodyEl.innerHTML = highlightJSON(respBody);
+      else bodyEl.textContent = respBody;
+
+      saveHistory({ method: method, service: service, path: path, headers: headersText, body: bodyText, status: resp.status, timestamp: Date.now() });
+    } catch(e) {
+      var badge = document.getElementById('rt-badge');
+      badge.classList.add('visible');
+      document.getElementById('rt-status').textContent = 'Error';
+      document.getElementById('rt-status').className = 'rt-status s5';
+      document.getElementById('rt-time').textContent = '';
+      document.getElementById('rt-size').textContent = '';
+      document.getElementById('response-empty').style.display = 'none';
+      document.getElementById('response-content').style.display = 'block';
       document.getElementById('resp-body').textContent = e.message;
     }
 
     document.getElementById('send-btn').disabled = false;
   };
 
-  // History management
-  function getHistory() {
-    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
-    catch(e) { return []; }
-  }
-
+  // ── History ──
+  function getHistory() { try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); } catch(e) { return []; } }
   function saveHistory(entry) {
-    var history = getHistory();
-    history.unshift(entry);
-    if (history.length > MAX_HISTORY) history = history.slice(0, MAX_HISTORY);
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+    var h = getHistory(); h.unshift(entry);
+    if (h.length > MAX_HISTORY) h = h.slice(0, MAX_HISTORY);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(h));
     renderHistory();
   }
-
   function renderHistory() {
     var history = getHistory();
     var list = document.getElementById('history-list');
-    var empty = document.getElementById('history-empty');
-
     list.innerHTML = '';
-    if (history.length === 0) {
-      list.appendChild(empty);
-      empty.style.display = 'block';
-      return;
-    }
-
-    history.forEach(function(entry, idx) {
+    if (!history.length) { list.innerHTML = '<div class="history-empty">No requests yet</div>'; return; }
+    history.forEach(function(entry) {
       var div = document.createElement('div');
       div.className = 'history-item';
-      div.innerHTML =
-        '<span class="history-method method-' + entry.method + '">' + entry.method + '</span>' +
+      div.innerHTML = '<span class="history-method method-' + entry.method + '">' + entry.method + '</span>' +
         '<span class="history-path">' + escapeHtml(entry.service + entry.path) + '</span>';
       div.addEventListener('click', function() { loadHistoryEntry(entry); });
       list.appendChild(div);
     });
   }
-
   function loadHistoryEntry(entry) {
     document.getElementById('method').value = entry.method;
     document.getElementById('service').value = entry.service;
     document.getElementById('path').value = entry.path;
     document.getElementById('headers').value = entry.headers || '';
     document.getElementById('body').value = entry.body || '';
-    // Switch to headers tab
     document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
     document.querySelectorAll('.tab-panel').forEach(function(p) { p.classList.remove('active'); });
     document.querySelector('[data-tab="headers"]').classList.add('active');
     document.getElementById('tab-headers').classList.add('active');
   }
+  window.clearHistory = function() { localStorage.removeItem(HISTORY_KEY); renderHistory(); };
 
-  window.clearHistory = function() {
-    localStorage.removeItem(HISTORY_KEY);
-    renderHistory();
-  };
-
-  // Keyboard shortcuts
+  // ── Keyboard ──
   document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') {
       var overlay = document.getElementById('settings-overlay');
-      if (overlay.classList.contains('open')) {
-        overlay.classList.remove('open');
-        overlay.style.display = 'none';
-      }
+      if (overlay.classList.contains('open')) overlay.classList.remove('open');
     }
-    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-      e.preventDefault();
-      sendRequest();
-    }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); sendRequest(); }
   });
 
   loadServices();
   renderHistory();
-
-  // Auto-show settings if no keys configured on first load
   var initialKeys = loadApiKeys();
   if (!initialKeys.openai && !initialKeys.anthropic && !initialKeys.google) {
     setTimeout(function() { toggleSettings(true); }, 500);
