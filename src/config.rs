@@ -144,14 +144,22 @@ pub fn expand_path(path: &str) -> PathBuf {
 /// Interpolate environment variables: ${VAR_NAME} -> env value
 fn interpolate_env(s: &str) -> String {
     let mut result = s.to_string();
-    while let Some(start) = result.find("${") {
-        if let Some(end) = result[start..].find('}') {
-            let var_name = &result[start + 2..start + end];
-            let value = std::env::var(var_name).unwrap_or_else(|_| {
-                eprintln!("⚠️  Warning: Environment variable {} not set", var_name);
-                format!("${{{}}}", var_name)
-            });
-            result = format!("{}{}{}", &result[..start], value, &result[start + end + 1..]);
+    let mut search_from = 0;
+    while let Some(rel_start) = result[search_from..].find("${") {
+        let start = search_from + rel_start;
+        if let Some(rel_end) = result[start..].find('}') {
+            let var_name = &result[start + 2..start + rel_end];
+            match std::env::var(var_name) {
+                Ok(value) => {
+                    result = format!("{}{}{}", &result[..start], value, &result[start + rel_end + 1..]);
+                    search_from = start + value.len();
+                }
+                Err(_) => {
+                    eprintln!("⚠️  Warning: Environment variable {} not set", var_name);
+                    // Skip past this ${...} to avoid infinite loop
+                    search_from = start + rel_end + 1;
+                }
+            }
         } else {
             break;
         }

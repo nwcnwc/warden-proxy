@@ -50,6 +50,46 @@ self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
+// Session storage cache: domain -> { local_storage, session_storage }
+let sessionStorageCache = {};
+
+// Check for session storage that needs injection into pages
+async function checkSessionStorage(domain) {
+  if (sessionStorageCache[domain] !== undefined) return sessionStorageCache[domain];
+  try {
+    const resp = await fetch(`${WARDEN_ORIGIN}/admin/api/sessions/${encodeURIComponent(domain)}/storage`);
+    if (!resp.ok) { sessionStorageCache[domain] = null; return null; }
+    const data = await resp.json();
+    const hasData = (Object.keys(data.local_storage || {}).length > 0 ||
+                     Object.keys(data.session_storage || {}).length > 0);
+    sessionStorageCache[domain] = hasData ? data : null;
+    return sessionStorageCache[domain];
+  } catch (e) {
+    sessionStorageCache[domain] = null;
+    return null;
+  }
+}
+
+// Listen for messages from pages requesting session storage
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'GET_SESSION_STORAGE') {
+    const domain = event.data.domain;
+    checkSessionStorage(domain).then(data => {
+      if (event.source) {
+        event.source.postMessage({
+          type: 'SESSION_STORAGE_DATA',
+          domain: domain,
+          data: data
+        });
+      }
+    });
+  }
+  // Invalidate cache when sessions change
+  if (event.data && event.data.type === 'INVALIDATE_SESSION_CACHE') {
+    sessionStorageCache = {};
+  }
+});
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
   const requestOrigin = url.origin;

@@ -220,6 +220,22 @@ async fn handle_http(
         }
     }
 
+    // Session cookie injection: if we have a captured session for the target
+    // domain, inject stored cookies into the request
+    {
+        let sessions = state.sessions.read().await;
+        let cookies = sessions.cookies_for_request(&target_url);
+        if !cookies.is_empty() {
+            let cookie_header = cookies.iter()
+                .map(|c| format!("{}={}", c.name, c.value))
+                .collect::<Vec<_>>()
+                .join("; ");
+            if let Ok(v) = axum::http::HeaderValue::from_str(&cookie_header) {
+                headers.insert(header::COOKIE, v);
+            }
+        }
+    }
+
     // Read the request body (respecting max body size)
     let max_body = state.config.max_body_size;
     let method = req.method().clone();

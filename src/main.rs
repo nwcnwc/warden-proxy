@@ -1,19 +1,11 @@
-mod config;
-mod proxy;
-mod vault;
-mod access;
-mod limiter;
-mod client_files;
-mod websocket;
-
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::collections::VecDeque;
 use axum::{
     Router,
     body::Body,
-    routing::{any, get},
-    extract::State,
+    routing::{any, get, post},
+    extract::{State, Path},
     response::{Json, Response},
 };
 use clap::{Parser, Subcommand};
@@ -21,46 +13,14 @@ use tokio::sync::{RwLock, broadcast};
 use tower_http::services::ServeDir;
 use tracing::info;
 
-use config::WardenConfig;
+use warden_proxy::{
+    AppState, RequestLog,
+    config, proxy, vault, access, limiter, sessions, client_files,
+};
 use vault::KeyVault;
 use access::AccessController;
 use limiter::RateLimiter;
-
-/// Global request counter for generating unique request IDs
-static REQUEST_COUNTER: AtomicU64 = AtomicU64::new(0);
-
-/// Generate a unique request ID for this process instance
-pub fn next_request_id() -> String {
-    let count = REQUEST_COUNTER.fetch_add(1, Ordering::Relaxed);
-    format!("wdn-{:08x}", count)
-}
-
-#[derive(Clone, serde::Serialize)]
-pub struct RequestLog {
-    pub id: String,
-    pub timestamp: u64,
-    pub method: String,
-    pub service: String,
-    pub path: String,
-    pub origin: String,
-    pub status: u16,
-    pub duration_ms: u64,
-    pub request_size: u64,
-    pub response_size: u64,
-}
-
-/// Shared application state
-pub struct AppState {
-    pub config: WardenConfig,
-    pub vault: KeyVault,
-    pub access: AccessController,
-    pub limiter: RwLock<RateLimiter>,
-    pub client: reqwest::Client,
-    pub start_time: std::time::Instant,
-    pub request_count: AtomicU64,
-    pub traffic_log: RwLock<VecDeque<RequestLog>>,
-    pub traffic_tx: broadcast::Sender<RequestLog>,
-}
+use sessions::SessionStore;
 
 #[derive(Parser)]
 #[command(name = "warden")]
@@ -164,6 +124,12 @@ async fn start_server(port_override: Option<u16>) {
     let vault = KeyVault::from_config(&config);
     let access = AccessController::from_config(&config);
     let limiter = RateLimiter::from_config(&config);
+    let session_store = SessionStore::new();
+
+    let session_count = session_store.list().len();
+    if session_count > 0 {
+        info!("Sessions: {} loaded", session_count);
+    }
 
     let services: Vec<&str> = vault.list_services().into_iter().collect();
     info!("Services: {}", if services.is_empty() { "none configured".to_string() } else { services.join(", ") });
@@ -181,6 +147,7 @@ async fn start_server(port_override: Option<u16>) {
         vault,
         access,
         limiter: RwLock::new(limiter),
+        sessions: RwLock::new(session_store),
         client,
         start_time: std::time::Instant::now(),
         request_count: AtomicU64::new(0),
@@ -194,6 +161,13 @@ async fn start_server(port_override: Option<u16>) {
         .route("/routes", get(routes))
         .route("/admin/api/traffic", get(traffic_list))
         .route("/admin/api/traffic/stream", get(traffic_stream))
+        // Session management API
+        .route("/admin/api/sessions", get(sessions_list))
+        .route("/admin/api/sessions/capture", post(sessions_capture))
+        .route("/admin/api/sessions/{domain}", get(session_detail))
+        .route("/admin/api/sessions/{domain}/revoke", post(session_revoke))
+        .route("/admin/api/sessions/{domain}/storage", get(session_storage))
+        .route("/admin/api/sessions/{domain}/refresh", post(session_refresh))
         .route("/client/{filename}", get(client_files::serve_client_file))
         .route("/proxy/{service}", any(proxy::handle))
         .route("/proxy/{service}/{*path}", any(proxy::handle))
@@ -343,6 +317,247 @@ async fn traffic_stream(
         .unwrap()
 }
 
+// ════════════════════════════════════════════════════════
+// Session Management API
+// ════════════════════════════════════════════════════════
+
+async fn sessions_list(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let store = state.sessions.read().await;
+    let sessions: Vec<serde_json::Value> = store.list().iter().map(|s| {
+        serde_json::json!({
+            "domain": s.domain,
+            "status": s.status,
+            "captured_at": s.captured_at,
+            "last_used": s.last_used,
+            "cookie_count": s.cookies.len(),
+            "storage_keys": s.local_storage.values().map(|m| m.len()).sum::<usize>()
+                + s.session_storage.values().map(|m| m.len()).sum::<usize>(),
+        })
+    }).collect();
+    Json(serde_json::json!(sessions))
+}
+
+#[derive(serde::Deserialize)]
+struct CaptureRequest {
+    domain: String,
+    #[allow(dead_code)]
+    start_url: Option<String>,
+}
+
+async fn sessions_capture(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<CaptureRequest>,
+) -> Response {
+    #[cfg(feature = "session-capture")]
+    {
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+
+        let domain = req.domain.clone();
+        let start_url = req.start_url.clone();
+
+        // Spawn capture in a blocking task (wry needs a real thread)
+        let result = tokio::task::spawn_blocking(move || {
+            warden_proxy::capture::capture_session(&domain, start_url.as_deref())
+        }).await;
+
+        match result {
+            Ok(Ok(session)) => {
+                let mut store = state.sessions.write().await;
+                store.insert(session);
+                (StatusCode::OK, Json(serde_json::json!({
+                    "status": "captured",
+                    "domain": req.domain,
+                }))).into_response()
+            }
+            Ok(Err(e)) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                    "error": format!("Capture failed: {}", e),
+                }))).into_response()
+            }
+            Err(e) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+                    "error": format!("Capture task failed: {}", e),
+                }))).into_response()
+            }
+        }
+    }
+
+    #[cfg(not(feature = "session-capture"))]
+    {
+        use axum::http::StatusCode;
+        use axum::response::IntoResponse;
+
+        // Without WebView support, sessions can be imported via the API
+        // Create a placeholder session that can be populated via direct file edit
+        let now = format_timestamp();
+        let session = sessions::Session {
+            domain: req.domain.clone(),
+            captured_at: now.clone(),
+            last_used: now,
+            status: sessions::SessionStatus::Capturing,
+            cookies: vec![],
+            local_storage: std::collections::HashMap::new(),
+            session_storage: std::collections::HashMap::new(),
+        };
+
+        let mut store = state.sessions.write().await;
+        store.insert(session);
+
+        (StatusCode::OK, Json(serde_json::json!({
+            "status": "capturing",
+            "domain": req.domain,
+            "note": "Session capture requires the session-capture feature. Session file created for manual import.",
+        }))).into_response()
+    }
+}
+
+async fn session_detail(
+    State(state): State<Arc<AppState>>,
+    Path(domain): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let store = state.sessions.read().await;
+    match store.get(&domain) {
+        Some(session) => {
+            // Return details without exposing cookie/storage values
+            let cookie_summary: Vec<serde_json::Value> = session.cookies.iter().map(|c| {
+                serde_json::json!({
+                    "name": c.name,
+                    "domain": c.domain,
+                    "path": c.path,
+                    "secure": c.secure,
+                    "http_only": c.http_only,
+                    "expires": c.expires,
+                })
+            }).collect();
+
+            Json(serde_json::json!({
+                "domain": session.domain,
+                "status": session.status,
+                "captured_at": session.captured_at,
+                "last_used": session.last_used,
+                "cookies": cookie_summary,
+                "local_storage_origins": session.local_storage.keys().collect::<Vec<_>>(),
+                "session_storage_origins": session.session_storage.keys().collect::<Vec<_>>(),
+            })).into_response()
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                "error": format!("No session for domain: {}", domain)
+            }))).into_response()
+        }
+    }
+}
+
+async fn session_revoke(
+    State(state): State<Arc<AppState>>,
+    Path(domain): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let mut store = state.sessions.write().await;
+    match store.remove(&domain) {
+        Some(_) => {
+            info!("Session revoked: {}", domain);
+            Json(serde_json::json!({
+                "status": "revoked",
+                "domain": domain,
+            })).into_response()
+        }
+        None => {
+            (StatusCode::NOT_FOUND, Json(serde_json::json!({
+                "error": format!("No session for domain: {}", domain)
+            }))).into_response()
+        }
+    }
+}
+
+async fn session_storage(
+    State(state): State<Arc<AppState>>,
+    Path(domain): Path<String>,
+) -> Response {
+    use axum::response::IntoResponse;
+
+    let store = state.sessions.read().await;
+    // Build origin from domain
+    let origin = format!("https://{}", domain);
+    match store.storage_for_origin(&origin) {
+        Some(data) => {
+            Json(serde_json::json!(data)).into_response()
+        }
+        None => {
+            Json(serde_json::json!({
+                "local_storage": {},
+                "session_storage": {},
+            })).into_response()
+        }
+    }
+}
+
+async fn session_refresh(
+    State(state): State<Arc<AppState>>,
+    Path(domain): Path<String>,
+) -> Response {
+    use axum::http::StatusCode;
+    use axum::response::IntoResponse;
+
+    let mut store = state.sessions.write().await;
+    if store.get(&domain).is_none() {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({
+            "error": format!("No session for domain: {}", domain)
+        }))).into_response();
+    }
+    let session = store.get_mut(&domain).unwrap();
+    session.last_used = format_timestamp();
+    let updated = session.clone();
+    store.save(&updated).ok();
+    Json(serde_json::json!({
+        "status": "refreshed",
+        "domain": domain,
+    })).into_response()
+}
+
+fn format_timestamp() -> String {
+    let dur = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = dur.as_secs();
+    let days = secs / 86400;
+    let time_secs = secs % 86400;
+    let hours = time_secs / 3600;
+    let minutes = (time_secs % 3600) / 60;
+    let seconds = time_secs % 60;
+
+    let mut y = 1970i64;
+    let mut remaining = days as i64;
+    loop {
+        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
+        if remaining < days_in_year { break; }
+        remaining -= days_in_year;
+        y += 1;
+    }
+    let month_days = [31, if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut m = 1;
+    for &dm in &month_days {
+        if remaining < dm { break; }
+        remaining -= dm;
+        m += 1;
+    }
+    let d = remaining + 1;
+
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hours, minutes, seconds)
+}
+
+// ════════════════════════════════════════════════════════
+// Status Check
+// ════════════════════════════════════════════════════════
+
 async fn check_status() {
     let config = config::load_config().unwrap_or_default();
     let url = format!("http://127.0.0.1:{}/status", config.port);
@@ -439,7 +654,6 @@ fn cmd_remove_key(service: &str) {
     };
 
     if config.keys.remove(service).is_some() {
-        // Also clean up related access rules and limits
         config.limits.remove(service);
 
         match config::save_config(&config) {
@@ -507,11 +721,9 @@ fn cmd_test_key(service: &str) {
     println!("  Base URL: {}", svc.base_url);
     println!("  Header:   {}", svc.header.as_deref().unwrap_or("Authorization"));
 
-    // Try to resolve the key through the vault
     let vault = KeyVault::from_config(&config);
     match vault.get_service(service) {
         Some(entry) => {
-            // Show that a key was resolved without revealing its value
             let masked = if entry.value.len() > 8 {
                 format!("{}...{} ({} chars)",
                     &entry.value[..4],
