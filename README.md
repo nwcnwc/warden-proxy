@@ -219,14 +219,26 @@ Legacy mode still works: use `"value": "Bearer ${OPENAI_API_KEY}"` for simple en
 
 ## Launchpad & Bundled Apps
 
-Warden ships with a web-based launchpad at **http://localhost:7400** and four bundled apps:
+Warden ships with a web-based launchpad at **http://localhost:7400** organized into two sections:
+
+### Warden's Office (Admin)
+
+| Panel | Description |
+|-------|-------------|
+| **Key Manager** | View configured services, test key resolution, generate CLI commands to add new services. |
+| **Traffic Control** | Real-time request log with SQLite persistence. Filter by service, method, status, time range. Shows what Warden did on each request (headers stripped, keys injected, tokens substituted). Alert system with severity levels. CSV export. |
+| **Website Access** | Log into websites once via captured sessions — jailed apps get access without passwords. Quick-login icons for common services. |
+| **Service Status** | Raw status API — services, uptime, rate limits. |
+
+### The Jail (Apps)
 
 | App | Description |
 |-----|-------------|
-| **AI Chat** | Chat with OpenAI, Anthropic, or Google models. Streaming responses, markdown rendering. No API key needed — Warden injects it. |
-| **API Tester** | Postman-lite for Warden services. Pick a service, send requests, inspect responses with syntax highlighting. Request history saved in localStorage. |
-| **WebVM** | Full Debian Linux in the browser via CheerpX. Terminal via xterm.js. API calls route through Warden. |
-| **Key Manager** | View configured services, test key resolution, generate CLI commands to add new services. |
+| **AI Chat** | Chat with OpenAI, Anthropic, or Google models. Streaming responses, conversation history. No real API key needed — apps use fake keys, Warden injects real ones. |
+| **API Tester** | Postman-lite for Warden services. Pick a service, send requests, inspect responses. cURL import, request history in localStorage. |
+| **WebVM** | Full Debian Linux in the browser via CheerpX. Terminal via xterm.js. API calls from inside the VM route through Warden. Requires COEP/COOP headers (automatically served). |
+
+Apps in The Jail have no idea Warden exists — no branding, no references. They think they're using real API keys.
 
 Drop your own HTML files into `~/.warden/sites/apps/` and they'll appear in the "Your Apps" section of the launchpad.
 
@@ -271,21 +283,34 @@ warden-proxy/
 │   └── apps/
 │       ├── ai-chat/       # LLM chat interface
 │       ├── api-tester/    # HTTP request tester
-│       ├── webvm/         # Browser-based Debian VM
-│       └── key-manager/   # Key management UI
+│       └── webvm/         # Browser-based Debian VM
+│   └── admin/
+│       ├── keys/          # Key Manager
+│       ├── traffic/       # Traffic Control
+│       └── sessions/      # Website Access
+├── bin/
+│   └── wcurl             # CLI tool — curl through Warden
+├── tests/
+│   ├── ui-test.js        # Puppeteer UI test suite (86 tests)
+│   └── wcurl-test.sh     # wcurl regression tests (24 tests)
 ├── install.sh             # Build + install + systemd setup
 ├── warden.service         # Systemd user service file
 └── docs/
+    ├── session-capture.md
+    └── token-substitution.md
 ```
 
 ### Key Components
 
 | Component | What it does |
 |-----------|-------------|
-| **Service Worker** | Runs in the browser. Intercepts fetch() calls to registered APIs. Strips auth headers. Reroutes to Warden. Apps don't know it exists. |
-| **Proxy Server** | Runs on localhost. Strips auth again (defense in depth). Matches destination to registered service. Injects real key. Forwards request. Streams responses. |
+| **Service Worker** | Runs in the browser. Intercepts fetch() calls to registered APIs. Reroutes to Warden. Delivers fake tokens to app localStorage via `X-Warden-Storage` header. Never holds real secrets. |
+| **Proxy Server** | Runs on localhost. Strips ALL auth headers (defense in depth). Matches destination to service. Injects real key. Token substitution in responses. Streams SSE. Logs everything to Traffic Control. |
 | **Key Vault** | Multi-source key resolution: 1Password, Bitwarden, OS Keyring, encrypted vault, env vars. Keys resolved at startup, never leave the machine. |
 | **Access Controller** | Origin-based allowlisting. Controls which browser origins can access which services. Wildcard support. |
+| **Traffic Control** | SQLite-backed request log with configurable retention. Tracks what Warden did per request (stripped, injected, substituted). Alert system with severity levels (critical/warning/info). |
+| **Token Substitution** | Replaces real tokens in API responses with stable fakes (`wdn_` prefix). Swaps fake→real on outgoing requests. Apps never see real tokens. |
+| **wcurl** | Shell script CLI tool. Rewrites URLs through Warden proxy — use from VMs, terminals, scripts. Auto-discovers routes, caches 5 min. |
 | **Rate Limiter** | Per-service request limits (per-minute, per-day). Prevents runaway costs from buggy or malicious apps. |
 | **WebSocket Bridge** | Bidirectional WebSocket proxying with auth injection for real-time APIs. |
 
@@ -328,9 +353,22 @@ Read more: [The Browser Is Already a Virtual Machine](docs/browser-as-vm.md) *(c
 - [x] Streaming response support (SSE)
 - [x] Launchpad with bundled apps (AI Chat, API Tester, WebVM, Key Manager)
 - [x] systemd user service + install script
+- [x] Token substitution — fake tokens (`wdn_` prefix) in responses, real↔fake swap on requests
+- [x] Cookie merge strategy — auth cookies swapped, operational cookies pass through
+- [x] `wcurl` CLI tool — curl through Warden for VMs and local network
+- [x] Traffic Control with SQLite persistence (`~/.warden/traffic.db`)
+- [x] Alert system — critical/warning/info with launchpad flash alerts
+- [x] Inspection levels — metadata, headers, or full body capture (configurable)
+- [x] Traffic analytics — per-service stats, P50/P95/P99 latency, CSV export
+- [x] Tracks what Warden did — headers stripped, keys injected, tokens substituted per request
+- [x] Session capture architecture (wry WebView, feature-flagged)
+- [x] COEP/COOP headers for WebVM SharedArrayBuffer support
+- [x] Retention policy — configurable max age and DB size, automatic hourly pruning
 - [ ] Device bridge plugin system
 - [ ] Browser extension (alternative to Service Worker)
 - [ ] WASI integration (for Wasm apps outside the browser)
+- [ ] Login flow recording for automatic token field detection
+- [ ] LAN access mode (bind to 0.0.0.0)
 
 ## Contributing
 
