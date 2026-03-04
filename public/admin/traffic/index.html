@@ -300,7 +300,7 @@
       var resp = await fetch('/admin/api/traffic');
       var entries = await resp.json();
       entries.forEach(function(entry) { addEntry(entry, true); });
-      renderTable();
+      applyFilters();
     } catch(e) {}
     connectSSE();
   }

@@ -368,6 +368,18 @@ async function testAdminTraffic(browser) {
   assert(ui.hasAdminBanner, 'Has admin banner');
   assert(ui.hasTable, 'Has traffic table/log');
   assert(ui.hasFilter, 'Has filter controls');
+
+  // Traffic rows should render if there are entries
+  const rows = await page.evaluate(() => {
+    const tbody = document.getElementById('traffic-body');
+    return tbody ? tbody.children.length : 0;
+  });
+  const totalStat = await page.evaluate(() => {
+    const el = document.getElementById('stat-total');
+    return el ? parseInt(el.textContent) : 0;
+  });
+  assert(totalStat > 0 ? rows > 0 : true, `Traffic rows render when entries exist (${rows} rows, ${totalStat} total)`);
+
   assert(errors.length === 0, `No JS errors (got ${errors.length})`);
 
   await page.close();
