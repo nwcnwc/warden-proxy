@@ -3,6 +3,8 @@ use std::path::PathBuf;
 use serde::{Serialize, Deserialize};
 use tracing::{info, warn};
 
+use crate::tokens::TokenMap;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Session {
     pub domain: String,
@@ -14,6 +16,16 @@ pub struct Session {
     pub local_storage: HashMap<String, HashMap<String, String>>,
     #[serde(default)]
     pub session_storage: HashMap<String, HashMap<String, String>>,
+    /// Names of cookies that are auth cookies (captured during login).
+    /// These get swapped (fake↔real) on every request/response.
+    #[serde(default)]
+    pub auth_cookie_names: Vec<String>,
+    /// JSON field names that contain tokens (e.g., "access_token").
+    #[serde(default)]
+    pub token_fields: Vec<String>,
+    /// Bidirectional real↔fake token mapping.
+    #[serde(default)]
+    pub token_map: TokenMap,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -142,6 +154,24 @@ impl SessionStore {
             }
         }
         None
+    }
+
+    /// Find a mutable session matching a request domain.
+    pub fn find_for_domain_mut(&mut self, request_domain: &str) -> Option<&mut Session> {
+        // Need to find the key first, then do a mutable lookup
+        let key = self.sessions.keys()
+            .find(|k| domain_matches(request_domain, k))
+            .cloned();
+        key.and_then(move |k| self.sessions.get_mut(&k))
+    }
+
+    /// Save a session by domain name (convenience for proxy code).
+    pub fn save_domain(&self, domain: &str) -> Result<(), Box<dyn std::error::Error>> {
+        if let Some(session) = self.find_for_domain(domain) {
+            self.save(session)
+        } else {
+            Ok(())
+        }
     }
 
     /// Get cookies that should be injected for a given request URL.
@@ -363,6 +393,9 @@ mod tests {
             }],
             local_storage: HashMap::new(),
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("example.com".into(), session);
@@ -391,6 +424,9 @@ mod tests {
             }],
             local_storage: HashMap::new(),
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("example.com".into(), session);
@@ -419,6 +455,9 @@ mod tests {
             }],
             local_storage: HashMap::new(),
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("example.com".into(), session);
@@ -459,6 +498,9 @@ mod tests {
             ],
             local_storage: HashMap::new(),
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("example.com".into(), session);
@@ -493,6 +535,9 @@ mod tests {
             }],
             local_storage: HashMap::new(),
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("example.com".into(), session);
@@ -519,6 +564,9 @@ mod tests {
             cookies: vec![],
             local_storage: local,
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("yahoo.com".into(), session);
@@ -538,6 +586,9 @@ mod tests {
             cookies: vec![],
             local_storage: HashMap::new(),
             session_storage: HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
         let mut sessions = HashMap::new();
         sessions.insert("yahoo.com".into(), session);

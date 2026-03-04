@@ -169,6 +169,7 @@ async fn start_server(port_override: Option<u16>) {
         .route("/admin/api/sessions/{domain}/storage", get(session_storage))
         .route("/admin/api/sessions/{domain}/refresh", post(session_refresh))
         .route("/client/{filename}", get(client_files::serve_client_file))
+        .route("/tools/wcurl", get(client_files::serve_wcurl))
         .route("/proxy/{service}", any(proxy::handle))
         .route("/proxy/{service}/{*path}", any(proxy::handle))
         .with_state(state.clone());
@@ -401,6 +402,9 @@ async fn sessions_capture(
             cookies: vec![],
             local_storage: std::collections::HashMap::new(),
             session_storage: std::collections::HashMap::new(),
+            auth_cookie_names: vec![],
+            token_fields: vec![],
+            token_map: Default::default(),
         };
 
         let mut store = state.sessions.write().await;

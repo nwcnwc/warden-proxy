@@ -91,6 +91,9 @@ fn make_session(domain: &str, cookies: Vec<Cookie>, status: SessionStatus) -> Se
         cookies,
         local_storage: HashMap::new(),
         session_storage: HashMap::new(),
+        auth_cookie_names: vec![],
+        token_fields: vec![],
+        token_map: Default::default(),
     }
 }
 
@@ -217,6 +220,9 @@ fn local_storage_returned_for_matching_origin() {
         cookies: vec![],
         local_storage: local,
         session_storage: HashMap::new(),
+        auth_cookie_names: vec![],
+        token_fields: vec![],
+        token_map: Default::default(),
     };
     let store = make_store(vec![session]);
 
@@ -239,6 +245,9 @@ fn revoked_session_returns_empty_storage() {
         cookies: vec![],
         local_storage: local,
         session_storage: HashMap::new(),
+        auth_cookie_names: vec![],
+        token_fields: vec![],
+        token_map: Default::default(),
     };
     let store = make_store(vec![session]);
 

@@ -4,6 +4,7 @@ pub mod vault;
 pub mod access;
 pub mod limiter;
 pub mod sessions;
+pub mod tokens;
 pub mod websocket;
 pub mod client_files;
 

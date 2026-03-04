@@ -10,6 +10,8 @@ use futures_util::TryStreamExt;
 use tracing::{info, warn, error};
 
 use crate::AppState;
+use crate::sessions::SessionStatus;
+use crate::tokens;
 
 /// Core proxy handler — handles both HTTP and WebSocket requests.
 ///
@@ -18,6 +20,8 @@ use crate::AppState;
 /// 2. Match destination to a registered service by NAME
 /// 3. Inject real API key based SOLELY on destination identity
 /// 4. Never search-and-replace. Never based on request content.
+/// 5. Cookie MERGE: keep app operational cookies, replace auth cookies with reals
+/// 6. Token substitution: fake↔real swap in headers and JSON bodies
 pub async fn handle(
     State(state): State<Arc<AppState>>,
     Path(params): Path<(String, Option<String>)>,
@@ -53,17 +57,11 @@ async fn handle_websocket_upgrade(
         }
     };
 
-    // Reconstruct a minimal request for the WS handler to read origin/headers from.
-    // The WS handler gets its info from the params and state.
     let (service_name, path) = params;
     let target_path = path.as_deref().unwrap_or("");
     let request_id = crate::next_request_id();
 
-    // We've already consumed the request for WS extraction, but the
-    // websocket module has all the info it needs via params + state.
-    // Access control and rate limiting happen below.
-
-    let origin = "unknown".to_string(); // Origin was in the consumed request
+    let origin = "unknown".to_string();
 
     // Check access control
     if !state.access.is_allowed(&origin, &service_name) {
@@ -120,6 +118,17 @@ async fn handle_websocket_upgrade(
             info!(request_id = %rid, "WebSocket closed: {}", svc_name);
         }
     })
+}
+
+/// Parse an app's Cookie header into individual name=value pairs.
+fn parse_cookie_header(header_value: &str) -> Vec<(String, String)> {
+    header_value.split(';')
+        .filter_map(|pair| {
+            let pair = pair.trim();
+            let eq = pair.find('=')?;
+            Some((pair[..eq].to_string(), pair[eq+1..].to_string()))
+        })
+        .collect()
 }
 
 /// Standard HTTP proxy handler
@@ -193,6 +202,18 @@ async fn handle_http(
         target_url
     };
 
+    // ── Save app's Cookie header before stripping ──
+    let app_cookie_header = req.headers()
+        .get("cookie")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
+    // ── Save app's Authorization header for fake→real substitution ──
+    let app_auth_header = req.headers()
+        .get("authorization")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
+
     // Build headers — copy from original, then STRIP ALL AUTH
     let mut headers = HeaderMap::new();
     for (key, value) in req.headers() {
@@ -220,18 +241,70 @@ async fn handle_http(
         }
     }
 
-    // Session cookie injection: if we have a captured session for the target
-    // domain, inject stored cookies into the request
+    // ── Cookie MERGE strategy ──
+    // Instead of replacing all cookies, merge: real auth + app operational cookies
     {
         let sessions = state.sessions.read().await;
-        let cookies = sessions.cookies_for_request(&target_url);
-        if !cookies.is_empty() {
-            let cookie_header = cookies.iter()
-                .map(|c| format!("{}={}", c.name, c.value))
-                .collect::<Vec<_>>()
-                .join("; ");
-            if let Ok(v) = axum::http::HeaderValue::from_str(&cookie_header) {
-                headers.insert(header::COOKIE, v);
+        let session_cookies = sessions.cookies_for_request(&target_url);
+
+        // Get auth cookie names for this session (if any)
+        let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
+            .unwrap_or((false, String::new(), String::new()));
+        let session = sessions.find_for_domain(&request_domain);
+        let auth_cookie_names: Vec<String> = session
+            .filter(|s| s.status == SessionStatus::Active)
+            .map(|s| s.auth_cookie_names.clone())
+            .unwrap_or_default();
+
+        if !session_cookies.is_empty() || !auth_cookie_names.is_empty() {
+            // Start with app's operational cookies (non-auth)
+            let mut merged_cookies: Vec<(String, String)> = Vec::new();
+
+            if let Some(ref app_cookies) = app_cookie_header {
+                let parsed = parse_cookie_header(app_cookies);
+                for (name, val) in parsed {
+                    // If this cookie name matches an auth cookie, discard it (app has a fake)
+                    if auth_cookie_names.iter().any(|a| a == &name) {
+                        continue;
+                    }
+                    // Keep operational cookies (CSRF, tracking, etc.)
+                    merged_cookies.push((name, val));
+                }
+            }
+
+            // Add real auth cookies from session store
+            for c in &session_cookies {
+                merged_cookies.push((c.name.clone(), c.value.clone()));
+            }
+
+            if !merged_cookies.is_empty() {
+                let cookie_header = merged_cookies.iter()
+                    .map(|(n, v)| format!("{}={}", n, v))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                if let Ok(v) = axum::http::HeaderValue::from_str(&cookie_header) {
+                    headers.insert(header::COOKIE, v);
+                }
+            }
+        }
+    }
+
+    // ── Token substitution: outgoing fake→real in Authorization header ──
+    {
+        let sessions = state.sessions.read().await;
+        let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
+            .unwrap_or((false, String::new(), String::new()));
+        if let Some(session) = sessions.find_for_domain(&request_domain) {
+            if session.status == SessionStatus::Active && !session.token_map.fake_to_real.is_empty() {
+                // Check if the app sent a fake token in Authorization
+                if let Some(ref auth_val) = app_auth_header {
+                    let real_auth = session.token_map.replace_fakes_with_reals(auth_val);
+                    if real_auth != *auth_val {
+                        if let Ok(v) = axum::http::HeaderValue::from_str(&real_auth) {
+                            headers.insert(header::AUTHORIZATION, v);
+                        }
+                    }
+                }
             }
         }
     }
@@ -239,8 +312,8 @@ async fn handle_http(
     // Read the request body (respecting max body size)
     let max_body = state.config.max_body_size;
     let method = req.method().clone();
-    let body_bytes = match axum::body::to_bytes(req.into_body(), max_body).await {
-        Ok(b) => b,
+    let mut body_bytes = match axum::body::to_bytes(req.into_body(), max_body).await {
+        Ok(b) => b.to_vec(),
         Err(e) => {
             error!(request_id = %request_id, "Failed to read request body: {}", e);
             return (
@@ -249,6 +322,23 @@ async fn handle_http(
             ).into_response();
         }
     };
+
+    // ── Token substitution: outgoing fake→real in request body ──
+    {
+        let sessions = state.sessions.read().await;
+        let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
+            .unwrap_or((false, String::new(), String::new()));
+        if let Some(session) = sessions.find_for_domain(&request_domain) {
+            if session.status == SessionStatus::Active && !session.token_map.fake_to_real.is_empty() && !body_bytes.is_empty() {
+                if let Ok(body_str) = std::str::from_utf8(&body_bytes) {
+                    let replaced = session.token_map.replace_fakes_with_reals(body_str);
+                    if replaced != body_str {
+                        body_bytes = replaced.into_bytes();
+                    }
+                }
+            }
+        }
+    }
 
     // Per-service timeout (or global default)
     let timeout_secs = service.timeout.unwrap_or(state.config.request_timeout);
@@ -275,7 +365,7 @@ async fn handle_http(
     forward = forward.headers(reqwest_headers);
 
     if !body_bytes.is_empty() {
-        forward = forward.body(body_bytes.to_vec());
+        forward = forward.body(body_bytes.clone());
     }
 
     // Track request count
@@ -285,17 +375,90 @@ async fn handle_http(
         Ok(resp) => {
             let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
 
+            // Check if this is a JSON response that may need token substitution
+            let is_json = resp.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok())
+                .is_some_and(|ct| ct.contains("application/json"));
+
+            // ── Process Set-Cookie headers: swap auth cookie values ──
             let mut response_headers = HeaderMap::new();
-            for (key, value) in resp.headers() {
-                if let (Ok(k), Ok(v)) = (
-                    axum::http::HeaderName::from_bytes(key.as_str().as_bytes()),
-                    axum::http::HeaderValue::from_bytes(value.as_bytes()),
-                ) {
-                    // Skip hop-by-hop headers — axum manages its own transfer encoding
-                    if k == "transfer-encoding" || k == "connection" {
-                        continue;
+            {
+                let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
+                    .unwrap_or((false, String::new(), String::new()));
+
+                // Collect auth cookie names and token map from session (read lock)
+                let (auth_names, has_session) = {
+                    let sessions = state.sessions.read().await;
+                    let session = sessions.find_for_domain(&request_domain);
+                    match session {
+                        Some(s) if s.status == SessionStatus::Active => {
+                            (s.auth_cookie_names.clone(), true)
+                        }
+                        _ => (vec![], false),
                     }
-                    response_headers.insert(k, v);
+                };
+
+                for (key, value) in resp.headers() {
+                    if let (Ok(k), Ok(v)) = (
+                        axum::http::HeaderName::from_bytes(key.as_str().as_bytes()),
+                        axum::http::HeaderValue::from_bytes(value.as_bytes()),
+                    ) {
+                        // Skip hop-by-hop headers
+                        if k == "transfer-encoding" || k == "connection" {
+                            continue;
+                        }
+
+                        // Handle Set-Cookie: swap auth cookie values with fakes
+                        if k == "set-cookie" && has_session && !auth_names.is_empty() {
+                            if let Ok(sc_str) = v.to_str() {
+                                // Parse cookie name from Set-Cookie header
+                                if let Some(eq_pos) = sc_str.find('=') {
+                                    let cookie_name = sc_str[..eq_pos].trim();
+                                    if auth_names.iter().any(|a| a == cookie_name) {
+                                        // This is an auth cookie — store new real value, send fake
+                                        // Extract the value (up to first ; or end)
+                                        let after_eq = &sc_str[eq_pos+1..];
+                                        let value_end = after_eq.find(';').unwrap_or(after_eq.len());
+                                        let real_value = &after_eq[..value_end];
+
+                                        // Generate a stable fake cookie value
+                                        let fake_value = tokens::TokenMap::generate_fake(real_value, &request_domain);
+
+                                        // Update session with new real cookie value
+                                        {
+                                            let mut sessions = state.sessions.write().await;
+                                            if let Some(session) = sessions.find_for_domain_mut(&request_domain) {
+                                                // Update the cookie value in our store
+                                                for c in &mut session.cookies {
+                                                    if c.name == cookie_name {
+                                                        c.value = real_value.to_string();
+                                                    }
+                                                }
+                                                // Store in token map for completeness
+                                                session.token_map.insert(real_value, &request_domain);
+                                                sessions.save_domain(&request_domain).ok();
+                                            }
+                                        }
+
+                                        // Rewrite Set-Cookie with fake value
+                                        let fake_set_cookie = format!(
+                                            "{}={}{}",
+                                            cookie_name,
+                                            fake_value,
+                                            if value_end < after_eq.len() { &after_eq[value_end..] } else { "" }
+                                        );
+                                        if let Ok(fv) = axum::http::HeaderValue::from_str(&fake_set_cookie) {
+                                            response_headers.append(k, fv);
+                                        }
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+
+                        response_headers.append(k, v);
+                    }
                 }
             }
 
@@ -309,10 +472,30 @@ async fn handle_http(
                 response_headers.insert("x-request-id", v);
             }
 
+            // ── Add X-Warden-Storage header for the SW ──
+            // Contains fake localStorage/sessionStorage values for this origin
+            {
+                let sessions = state.sessions.read().await;
+                let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
+                    .unwrap_or((false, String::new(), String::new()));
+                let origin_url = format!("https://{}", request_domain);
+                if let Some(storage_data) = sessions.storage_for_origin(&origin_url) {
+                    if !storage_data.local_storage.is_empty() || !storage_data.session_storage.is_empty() {
+                        if let Ok(json) = serde_json::to_string(&storage_data) {
+                            use base64::Engine;
+                            let encoded = base64::engine::general_purpose::STANDARD.encode(json.as_bytes());
+                            if let Ok(hv) = axum::http::HeaderValue::from_str(&encoded) {
+                                response_headers.insert("x-warden-storage", hv);
+                            }
+                        }
+                    }
+                }
+            }
+
             let duration = start.elapsed();
             info!(
                 request_id = %request_id,
-                "{} {}/{} -> {} ({}ms, streaming)",
+                "{} {}/{} -> {} ({}ms)",
                 method, service_name, target_path, status.as_u16(), duration.as_millis()
             );
 
@@ -346,16 +529,73 @@ async fn handle_http(
                 let _ = state.traffic_tx.send(entry);
             }
 
-            // Stream the response body instead of buffering it
-            let stream = resp.bytes_stream()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
-            let body = Body::from_stream(stream);
+            // ── Token substitution in JSON response bodies ──
+            if is_json {
+                // Buffer the body for token substitution
+                let body_result = resp.bytes().await;
+                match body_result {
+                    Ok(resp_bytes) => {
+                        let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
+                            .unwrap_or((false, String::new(), String::new()));
 
-            let mut response = Response::new(body);
-            *response.status_mut() = status;
-            *response.headers_mut() = response_headers;
+                        let mut modified_body = resp_bytes.to_vec();
 
-            response
+                        // Try to parse and substitute tokens
+                        if let Ok(body_str) = std::str::from_utf8(&resp_bytes) {
+                            if let Ok(mut json_val) = serde_json::from_str::<serde_json::Value>(body_str) {
+                                let mut sessions = state.sessions.write().await;
+                                if let Some(session) = sessions.find_for_domain_mut(&request_domain) {
+                                    if session.status == SessionStatus::Active {
+                                        let token_fields = session.token_fields.clone();
+                                        if tokens::substitute_tokens_in_json(
+                                            &mut json_val,
+                                            &mut session.token_map,
+                                            &token_fields,
+                                            &request_domain,
+                                        ) {
+                                            if let Ok(new_body) = serde_json::to_vec(&json_val) {
+                                                modified_body = new_body;
+                                                sessions.save_domain(&request_domain).ok();
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Update content-length if body changed
+                        if modified_body.len() != resp_bytes.len() {
+                            if let Ok(cl) = axum::http::HeaderValue::from_str(&modified_body.len().to_string()) {
+                                response_headers.insert(header::CONTENT_LENGTH, cl);
+                            }
+                        }
+
+                        let body = Body::from(modified_body);
+                        let mut response = Response::new(body);
+                        *response.status_mut() = status;
+                        *response.headers_mut() = response_headers;
+                        response
+                    }
+                    Err(e) => {
+                        error!(request_id = %request_id, "Failed to read JSON response body: {}", e);
+                        let mut response = Response::new(Body::empty());
+                        *response.status_mut() = status;
+                        *response.headers_mut() = response_headers;
+                        response
+                    }
+                }
+            } else {
+                // Non-JSON: stream the response body
+                let stream = resp.bytes_stream()
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+                let body = Body::from_stream(stream);
+
+                let mut response = Response::new(body);
+                *response.status_mut() = status;
+                *response.headers_mut() = response_headers;
+
+                response
+            }
         }
         Err(e) => {
             let duration = start.elapsed();

@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# wcurl — curl through Warden proxy
+#
+# Usage: wcurl [curl-options] URL
+#
+# Rewrites URLs to route through the Warden proxy.
+# If the URL matches a registered service, it goes through the proxy.
+# Otherwise, it passes through to curl directly.
+
+set -euo pipefail
+
+WARDEN_HOST="${WARDEN_HOST:-http://localhost:7400}"
+ROUTES_CACHE="${WCURL_CACHE:-/tmp/wcurl-routes-$$}"
+
+# Fetch routes from proxy (cached per session)
+fetch_routes() {
+    if [ ! -f "$ROUTES_CACHE" ] || [ "$(find "$ROUTES_CACHE" -mmin +5 2>/dev/null)" ]; then
+        curl -s "$WARDEN_HOST/routes" > "$ROUTES_CACHE" 2>/dev/null || true
+    fi
+    cat "$ROUTES_CACHE" 2>/dev/null || echo "{}"
+}
+
+# Find the URL argument in the args list
+find_url() {
+    local prev_was_flag=false
+    # Flags that take a value argument (next arg is not a URL)
+    local value_flags="-d --data -H --header -X --request -o --output -u --user -e --referer -A --user-agent -b --cookie -c --cookie-jar -F --form -T --upload-file --data-raw --data-binary --data-urlencode -w --write-out --resolve --connect-to -m --max-time --connect-timeout -r --range --retry --retry-delay --retry-max-time -K --config"
+
+    for arg in "$@"; do
+        if $prev_was_flag; then
+            prev_was_flag=false
+            continue
+        fi
+        # Check if this arg is a flag that expects a value
+        for flag in $value_flags; do
+            if [ "$arg" = "$flag" ]; then
+                prev_was_flag=true
+                continue 2
+            fi
+        done
+        # Skip flags (start with -)
+        if [[ "$arg" == -* ]]; then
+            continue
+        fi
+        # This looks like a URL
+        if [[ "$arg" == http://* ]] || [[ "$arg" == https://* ]]; then
+            echo "$arg"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Rewrite a URL to go through the proxy
+rewrite_url() {
+    local url="$1"
+    local routes
+    routes=$(fetch_routes)
+
+    # Extract origin from the URL (scheme + host)
+    local origin
+    origin=$(echo "$url" | sed -E 's|(https?://[^/]+).*|\1|')
+
+    # Look up service name for this origin
+    local service_name
+    service_name=$(echo "$routes" | sed -n "s/.*\"$(echo "$origin" | sed 's/[\/&]/\\&/g')\": *\"\([^\"]*\)\".*/\1/p")
+
+    if [ -z "$service_name" ]; then
+        # No matching service — pass through directly
+        echo ""
+        return
+    fi
+
+    # Extract path + query from the URL
+    local path_and_query
+    path_and_query=$(echo "$url" | sed -E "s|https?://[^/]+(.*)|\\1|")
+
+    echo "${WARDEN_HOST}/proxy/${service_name}${path_and_query}"
+}
+
+# Replace the URL in the args with the proxy URL
+replace_url_in_args() {
+    local original_url="$1"
+    local proxy_url="$2"
+    shift 2
+
+    local args=()
+    local prev_was_flag=false
+    local value_flags="-d --data -H --header -X --request -o --output -u --user -e --referer -A --user-agent -b --cookie -c --cookie-jar -F --form -T --upload-file --data-raw --data-binary --data-urlencode -w --write-out --resolve --connect-to -m --max-time --connect-timeout -r --range --retry --retry-delay --retry-max-time -K --config"
+
+    for arg in "$@"; do
+        if $prev_was_flag; then
+            args+=("$arg")
+            prev_was_flag=false
+            continue
+        fi
+        for flag in $value_flags; do
+            if [ "$arg" = "$flag" ]; then
+                prev_was_flag=true
+                break
+            fi
+        done
+        if [ "$arg" = "$original_url" ]; then
+            args+=("$proxy_url")
+        else
+            args+=("$arg")
+        fi
+    done
+    echo "${args[@]}"
+}
+
+# ── Main ──
+
+if [ $# -eq 0 ]; then
+    echo "wcurl — curl through Warden proxy"
+    echo ""
+    echo "Usage: wcurl [curl-options] URL"
+    echo ""
+    echo "Environment:"
+    echo "  WARDEN_HOST  Proxy URL (default: http://localhost:7400)"
+    echo ""
+    echo "If the URL matches a registered service, it routes through the proxy."
+    echo "Otherwise, it passes through to curl directly."
+    exit 0
+fi
+
+url=$(find_url "$@") || {
+    # No URL found — just pass everything to curl
+    exec curl "$@"
+}
+
+proxy_url=$(rewrite_url "$url")
+
+if [ -z "$proxy_url" ]; then
+    # No matching service — pass through to curl directly
+    exec curl "$@"
+fi
+
+# Build new args with rewritten URL
+new_args=()
+prev_was_flag=false
+value_flags="-d --data -H --header -X --request -o --output -u --user -e --referer -A --user-agent -b --cookie -c --cookie-jar -F --form -T --upload-file --data-raw --data-binary --data-urlencode -w --write-out --resolve --connect-to -m --max-time --connect-timeout -r --range --retry --retry-delay --retry-max-time -K --config"
+
+for arg in "$@"; do
+    if $prev_was_flag; then
+        new_args+=("$arg")
+        prev_was_flag=false
+        continue
+    fi
+    for flag in $value_flags; do
+        if [ "$arg" = "$flag" ]; then
+            new_args+=("$arg")
+            prev_was_flag=true
+            continue 2
+        fi
+    done
+    if [ "$arg" = "$url" ]; then
+        new_args+=("$proxy_url")
+    else
+        new_args+=("$arg")
+    fi
+done
+
+exec curl "${new_args[@]}"

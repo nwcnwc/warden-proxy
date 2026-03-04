@@ -102,16 +102,20 @@ fn proxy_has_security_documentation() {
         "proxy.rs must document the no-text-replacement rule");
 }
 
-/// Service Worker also strips auth headers (defense in depth)
+/// Service Worker is a dumb bridge — no auth references
 #[test]
-fn service_worker_strips_auth_headers() {
+fn service_worker_is_dumb_bridge_no_auth() {
     let sw = include_str!("../client/warden-sw.js");
-    assert!(sw.contains("authorization"),
-        "SW must filter authorization");
-    assert!(sw.contains("x-api-key"),
-        "SW must filter x-api-key");
-    assert!(sw.contains("cookie"),
-        "SW must filter cookie");
+    // SW must NOT reference auth headers — it's a dumb bridge
+    assert!(!sw.contains("authorization"),
+        "SW must not reference authorization");
+    assert!(!sw.contains("x-api-key"),
+        "SW must not reference x-api-key");
+    assert!(!sw.contains("cookie"),
+        "SW must not reference cookies");
+    // SW passes everything through unchanged
+    assert!(sw.contains("event.request.headers"),
+        "SW should forward original headers");
 }
 
 /// Session cookie injection is present in proxy

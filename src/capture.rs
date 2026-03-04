@@ -19,6 +19,8 @@ pub fn capture_session(domain: &str, start_url: Option<&str>) -> Result<Session,
     let (cookies, local_storage, session_storage) = open_webview_and_capture(&url, domain)?;
 
     let now = chrono_now();
+    // All cookies captured during login are considered auth cookies
+    let auth_cookie_names: Vec<String> = cookies.iter().map(|c| c.name.clone()).collect();
     Ok(Session {
         domain: domain.to_string(),
         captured_at: now.clone(),
@@ -27,6 +29,9 @@ pub fn capture_session(domain: &str, start_url: Option<&str>) -> Result<Session,
         cookies,
         local_storage,
         session_storage,
+        auth_cookie_names,
+        token_fields: vec![],
+        token_map: Default::default(),
     })
 }
 
