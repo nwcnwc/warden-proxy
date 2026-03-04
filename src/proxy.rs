@@ -12,6 +12,10 @@ use tracing::{info, warn, error};
 use crate::AppState;
 use crate::sessions::SessionStatus;
 use crate::tokens;
+use crate::Alert;
+
+/// Auth-related header names that get stripped from every request.
+const AUTH_HEADERS: &[&str] = &["authorization", "x-api-key", "api-key", "cookie"];
 
 /// Core proxy handler — handles both HTTP and WebSocket requests.
 ///
@@ -131,6 +135,26 @@ fn parse_cookie_header(header_value: &str) -> Vec<(String, String)> {
         .collect()
 }
 
+/// Redact auth header values for safe logging. Returns a JSON object
+/// with header names as keys and values either passed through or redacted.
+fn redact_headers(headers: &HeaderMap) -> serde_json::Value {
+    let mut map = serde_json::Map::new();
+    for (key, value) in headers {
+        let name = key.as_str().to_lowercase();
+        let val = if AUTH_HEADERS.contains(&name.as_str())
+            || name.contains("secret")
+            || name.contains("token")
+            || name.contains("key")
+        {
+            "[REDACTED]".to_string()
+        } else {
+            value.to_str().unwrap_or("[binary]").to_string()
+        };
+        map.insert(name, serde_json::Value::String(val));
+    }
+    serde_json::Value::Object(map)
+}
+
 /// Standard HTTP proxy handler
 async fn handle_http(
     state: Arc<AppState>,
@@ -140,6 +164,8 @@ async fn handle_http(
     let (service_name, path) = params;
     let target_path = path.as_deref().unwrap_or("");
     let start = std::time::Instant::now();
+
+    let inspection_level = state.config.traffic.inspection_level.clone();
 
     // Get request ID from headers or generate one
     let request_id = req.headers()
@@ -202,6 +228,13 @@ async fn handle_http(
         target_url
     };
 
+    // ── Capture request headers for inspection ──
+    let captured_request_headers = if inspection_level == "headers" || inspection_level == "full" {
+        Some(redact_headers(req.headers()))
+    } else {
+        None
+    };
+
     // ── Save app's Cookie header before stripping ──
     let app_cookie_header = req.headers()
         .get("cookie")
@@ -213,6 +246,20 @@ async fn handle_http(
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
+
+    // ── ALERT: Check if incoming request contains a real API key (security breach) ──
+    if state.config.traffic.alerts_enabled {
+        if let Some(ref auth_val) = app_auth_header {
+            check_real_key_leak(&state, auth_val, &service_name, &origin).await;
+        }
+        // Also check x-api-key
+        if let Some(xkey) = req.headers().get("x-api-key").and_then(|v| v.to_str().ok()) {
+            check_real_key_leak(&state, xkey, &service_name, &origin).await;
+        }
+    }
+
+    // ── Track which auth headers were stripped ──
+    let mut headers_stripped: Vec<String> = Vec::new();
 
     // Build headers — copy from original, then STRIP ALL AUTH
     let mut headers = HeaderMap::new();
@@ -227,6 +274,7 @@ async fn handle_http(
         // We throw away everything auth-related and inject based SOLELY
         // on the matched destination service. Never text replacement.
         if matches!(name.as_str(), "authorization" | "x-api-key" | "api-key" | "cookie") {
+            headers_stripped.push(name);
             continue;
         }
         if let Ok(header_name) = axum::http::HeaderName::from_bytes(key.as_str().as_bytes()) {
@@ -235,14 +283,22 @@ async fn handle_http(
     }
 
     // Inject the REAL key based on destination service identity
-    if let Ok(header_name) = axum::http::HeaderName::from_bytes(service.header.to_lowercase().as_bytes()) {
-        if let Ok(header_value) = axum::http::HeaderValue::from_str(&service.value) {
-            headers.insert(header_name, header_value);
+    let key_injected: Option<String> = {
+        if let Ok(header_name) = axum::http::HeaderName::from_bytes(service.header.to_lowercase().as_bytes()) {
+            if let Ok(header_value) = axum::http::HeaderValue::from_str(&service.value) {
+                headers.insert(header_name, header_value);
+                Some(service_name.clone())
+            } else {
+                None
+            }
+        } else {
+            None
         }
-    }
+    };
 
     // ── Cookie MERGE strategy ──
     // Instead of replacing all cookies, merge: real auth + app operational cookies
+    let mut cookies_merged: u32 = 0;
     {
         let sessions = state.sessions.read().await;
         let session_cookies = sessions.cookies_for_request(&target_url);
@@ -277,6 +333,8 @@ async fn handle_http(
                 merged_cookies.push((c.name.clone(), c.value.clone()));
             }
 
+            cookies_merged = merged_cookies.len() as u32;
+
             if !merged_cookies.is_empty() {
                 let cookie_header = merged_cookies.iter()
                     .map(|(n, v)| format!("{}={}", n, v))
@@ -290,6 +348,7 @@ async fn handle_http(
     }
 
     // ── Token substitution: outgoing fake→real in Authorization header ──
+    let mut tokens_substituted: u32 = 0;
     {
         let sessions = state.sessions.read().await;
         let (_, request_domain, _) = crate::sessions::parse_url(&target_url)
@@ -300,6 +359,7 @@ async fn handle_http(
                 if let Some(ref auth_val) = app_auth_header {
                     let real_auth = session.token_map.replace_fakes_with_reals(auth_val);
                     if real_auth != *auth_val {
+                        tokens_substituted += 1;
                         if let Ok(v) = axum::http::HeaderValue::from_str(&real_auth) {
                             headers.insert(header::AUTHORIZATION, v);
                         }
@@ -323,6 +383,15 @@ async fn handle_http(
         }
     };
 
+    // ── Capture request body preview for "full" inspection ──
+    let request_body_preview = if inspection_level == "full" && !body_bytes.is_empty() {
+        std::str::from_utf8(&body_bytes).ok().map(|s| {
+            if s.len() > 1000 { s[..1000].to_string() } else { s.to_string() }
+        })
+    } else {
+        None
+    };
+
     // ── Token substitution: outgoing fake→real in request body ──
     {
         let sessions = state.sessions.read().await;
@@ -333,6 +402,7 @@ async fn handle_http(
                 if let Ok(body_str) = std::str::from_utf8(&body_bytes) {
                     let replaced = session.token_map.replace_fakes_with_reals(body_str);
                     if replaced != body_str {
+                        tokens_substituted += 1;
                         body_bytes = replaced.into_bytes();
                     }
                 }
@@ -380,6 +450,13 @@ async fn handle_http(
                 .get("content-type")
                 .and_then(|v| v.to_str().ok())
                 .is_some_and(|ct| ct.contains("application/json"));
+
+            // ── Capture response headers for inspection ──
+            let captured_response_headers = if inspection_level == "headers" || inspection_level == "full" {
+                Some(redact_headers(resp.headers()))
+            } else {
+                None
+            };
 
             // ── Process Set-Cookie headers: swap auth cookie values ──
             let mut response_headers = HeaderMap::new();
@@ -500,33 +577,65 @@ async fn handle_http(
             );
 
             // Log to traffic monitor
-            {
-                let response_size = resp.headers()
-                    .get("content-length")
-                    .and_then(|v| v.to_str().ok())
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(0);
-                let entry = crate::RequestLog {
-                    id: request_id.clone(),
-                    timestamp: std::time::SystemTime::now()
+            let response_size = resp.headers()
+                .get("content-length")
+                .and_then(|v| v.to_str().ok())
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(0);
+
+            // ── Detect alert conditions ──
+            let alert_level = if state.config.traffic.alerts_enabled {
+                detect_alert_level(&state, &service_name, status.as_u16(), duration, response_size).await
+            } else {
+                None
+            };
+
+            let entry = {
+                let mut e = crate::RequestLog::new(
+                    request_id.clone(),
+                    std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64,
-                    method: method.to_string(),
-                    service: service_name.clone(),
-                    path: target_path.to_string(),
-                    origin: origin.clone(),
-                    status: status.as_u16(),
-                    duration_ms: duration.as_millis() as u64,
-                    request_size: body_bytes.len() as u64,
+                    method.to_string(),
+                    service_name.clone(),
+                    target_path.to_string(),
+                    origin.clone(),
+                    status.as_u16(),
+                    duration.as_millis() as u64,
+                    body_bytes.len() as u64,
                     response_size,
-                };
-                {
-                    let mut log = state.traffic_log.write().await;
-                    if log.len() >= 1000 { log.pop_front(); }
-                    log.push_back(entry.clone());
-                }
-                let _ = state.traffic_tx.send(entry);
+                );
+                e.headers_stripped = headers_stripped.clone();
+                e.key_injected = key_injected.clone();
+                e.tokens_substituted = tokens_substituted;
+                e.cookies_merged = cookies_merged;
+                e.inspection_level = inspection_level.clone();
+                e.request_headers = captured_request_headers;
+                e.response_headers = captured_response_headers;
+                e.request_body_preview = request_body_preview;
+                // response_body_preview filled below after reading body
+                e.alert_level = alert_level;
+                e
+            };
+
+            // Push to ring buffer + broadcast
+            {
+                let mut log = state.traffic_log.write().await;
+                if log.len() >= 1000 { log.pop_front(); }
+                log.push_back(entry.clone());
+            }
+            let _ = state.traffic_tx.send(entry.clone());
+
+            // Write to SQLite in background (non-blocking)
+            {
+                let store = state.traffic_store.clone();
+                let entry_clone = entry;
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = store.insert(&entry_clone) {
+                        tracing::warn!("Failed to write traffic entry to SQLite: {}", e);
+                    }
+                });
             }
 
             // ── Token substitution in JSON response bodies ──
@@ -539,6 +648,20 @@ async fn handle_http(
                             .unwrap_or((false, String::new(), String::new()));
 
                         let mut modified_body = resp_bytes.to_vec();
+
+                        // Capture response body preview if full inspection
+                        if inspection_level == "full" {
+                            if let Ok(s) = std::str::from_utf8(&resp_bytes) {
+                                let preview = if s.len() > 1000 { &s[..1000] } else { s };
+                                // Update the SQLite entry with body preview (fire-and-forget)
+                                let store = state.traffic_store.clone();
+                                let rid = request_id.clone();
+                                let prev = preview.to_string();
+                                tokio::task::spawn_blocking(move || {
+                                    let _ = store.update_response_preview(&rid, &prev);
+                                });
+                            }
+                        }
 
                         // Try to parse and substitute tokens
                         if let Ok(body_str) = std::str::from_utf8(&resp_bytes) {
@@ -604,29 +727,55 @@ async fn handle_http(
                 "Proxy error: {} - {} ({}ms)", service_name, e, duration.as_millis()
             );
 
+            // Detect alert for errors
+            let alert_level = if state.config.traffic.alerts_enabled {
+                detect_alert_level(&state, &service_name, 502, duration, 0).await
+            } else {
+                None
+            };
+
             // Log error to traffic monitor
-            {
-                let entry = crate::RequestLog {
-                    id: request_id.clone(),
-                    timestamp: std::time::SystemTime::now()
+            let entry = {
+                let mut e = crate::RequestLog::new(
+                    request_id.clone(),
+                    std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u64,
-                    method: method.to_string(),
-                    service: service_name.clone(),
-                    path: target_path.to_string(),
-                    origin: origin.clone(),
-                    status: 502,
-                    duration_ms: duration.as_millis() as u64,
-                    request_size: body_bytes.len() as u64,
-                    response_size: 0,
-                };
-                {
-                    let mut log = state.traffic_log.write().await;
-                    if log.len() >= 1000 { log.pop_front(); }
-                    log.push_back(entry.clone());
-                }
-                let _ = state.traffic_tx.send(entry);
+                    method.to_string(),
+                    service_name.clone(),
+                    target_path.to_string(),
+                    origin.clone(),
+                    502,
+                    duration.as_millis() as u64,
+                    body_bytes.len() as u64,
+                    0,
+                );
+                e.headers_stripped = headers_stripped;
+                e.key_injected = key_injected;
+                e.tokens_substituted = tokens_substituted;
+                e.cookies_merged = cookies_merged;
+                e.inspection_level = inspection_level;
+                e.request_headers = captured_request_headers.clone();
+                e.request_body_preview = request_body_preview.clone();
+                e.alert_level = alert_level;
+                e
+            };
+            {
+                let mut log = state.traffic_log.write().await;
+                if log.len() >= 1000 { log.pop_front(); }
+                log.push_back(entry.clone());
+            }
+            let _ = state.traffic_tx.send(entry.clone());
+
+            // Write to SQLite in background
+            {
+                let store = state.traffic_store.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = store.insert(&entry) {
+                        tracing::warn!("Failed to write traffic entry to SQLite: {}", e);
+                    }
+                });
             }
 
             let error_msg = if e.is_timeout() {
@@ -641,4 +790,122 @@ async fn handle_http(
             ).into_response()
         }
     }
+}
+
+/// Check if an incoming auth header value matches a real key in the vault.
+/// If so, raise a CRITICAL alert — the jailed app has the real key.
+async fn check_real_key_leak(state: &Arc<AppState>, auth_value: &str, service_name: &str, origin: &str) {
+    // Check all service keys to see if the raw value matches
+    for svc_name in state.vault.list_services() {
+        if let Some(entry) = state.vault.get_service(svc_name) {
+            if !entry.value.is_empty() && auth_value.contains(&entry.value) {
+                let alert = Alert::new(
+                    "critical",
+                    format!(
+                        "Real API key for '{}' detected in request from origin '{}' targeting '{}'! The jailed app has the real key.",
+                        svc_name, origin, service_name
+                    ),
+                    service_name.to_string(),
+                );
+                let mut alerts = state.alerts.write().await;
+                alerts.push(alert);
+                error!(
+                    "SECURITY BREACH: Real API key for '{}' found in incoming request from '{}'",
+                    svc_name, origin
+                );
+                return;
+            }
+        }
+    }
+}
+
+/// Detect alert conditions based on response status, latency, and size.
+async fn detect_alert_level(
+    state: &Arc<AppState>,
+    service_name: &str,
+    status: u16,
+    duration: Duration,
+    response_size: u64,
+) -> Option<String> {
+    // CRITICAL: 429 from upstream (rate limit hit)
+    if status == 429 {
+        let alert = Alert::new(
+            "warning",
+            format!("Rate limit hit (429) from upstream service '{}'", service_name),
+            service_name.to_string(),
+        );
+        state.alerts.write().await.push(alert);
+        return Some("warning".to_string());
+    }
+
+    // CRITICAL: consecutive 5xx — check recent traffic
+    if status >= 500 {
+        let log = state.traffic_log.read().await;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+        let five_min_ago = now.saturating_sub(300_000);
+
+        let recent_5xx: usize = log.iter()
+            .rev()
+            .take_while(|e| e.timestamp > five_min_ago)
+            .filter(|e| e.service == service_name && e.status >= 500)
+            .count();
+
+        if recent_5xx >= 4 {
+            // This will be the 5th
+            let alert = Alert::new(
+                "critical",
+                format!("5+ consecutive 5xx errors from '{}' in last 5 minutes", service_name),
+                service_name.to_string(),
+            );
+            state.alerts.write().await.push(alert);
+            return Some("critical".to_string());
+        }
+
+        // Check error rate > 10%
+        let total_recent: usize = log.iter()
+            .rev()
+            .take_while(|e| e.timestamp > five_min_ago)
+            .filter(|e| e.service == service_name)
+            .count();
+
+        if total_recent > 10 {
+            let error_rate = (recent_5xx as f64 + 1.0) / (total_recent as f64 + 1.0);
+            if error_rate > 0.10 {
+                let alert = Alert::new(
+                    "info",
+                    format!("Error rate > 10% for '{}' in last 5 minutes ({:.0}%)", service_name, error_rate * 100.0),
+                    service_name.to_string(),
+                );
+                state.alerts.write().await.push(alert);
+                return Some("info".to_string());
+            }
+        }
+    }
+
+    // INFO: High latency (> 5s)
+    if duration.as_secs() > 5 {
+        let alert = Alert::new(
+            "info",
+            format!("High latency ({:.1}s) for '{}'", duration.as_secs_f64(), service_name),
+            service_name.to_string(),
+        );
+        state.alerts.write().await.push(alert);
+        return Some("info".to_string());
+    }
+
+    // INFO: Large response (> 1MB)
+    if response_size > 1_048_576 {
+        let alert = Alert::new(
+            "info",
+            format!("Large response ({:.1} MB) from '{}'", response_size as f64 / 1_048_576.0, service_name),
+            service_name.to_string(),
+        );
+        state.alerts.write().await.push(alert);
+        return Some("info".to_string());
+    }
+
+    None
 }

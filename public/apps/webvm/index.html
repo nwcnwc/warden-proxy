@@ -309,15 +309,26 @@
   // Boot CheerpX
   async function bootVM() {
     try {
-      setLoading('Creating CheerpX instance...', 'Setting up the virtual machine runtime...');
+      setLoading('Downloading disk image...', 'Streaming Debian Linux from cloud (first load may take a moment)...');
       setStatus('Booting...', 'loading');
+
+      // Create cloud device (streams ext2 image from CDN via WebSocket)
+      var cloudDevice = await CheerpX.CloudDevice.create(
+        'wss://disks.webvm.io/debian_large_20230522_5044875331.ext2'
+      );
+
+      setLoading('Setting up local storage...', 'Creating persistent overlay for your changes...');
+
+      // Local IndexedDB cache + writable overlay
+      var idbDevice = await CheerpX.IDBDevice.create('webvm-block1');
+      var overlayDevice = await CheerpX.OverlayDevice.create(cloudDevice, idbDevice);
+
+      setLoading('Creating CheerpX instance...', 'Mounting filesystem and initializing virtual machine...');
 
       var cx = await CheerpX.Linux.create({
         mounts: [
-          { type: 'ext2', path: '/', url: 'wss://disks.webvm.io/debian_large_20230522_5044875331.ext2' },
+          { type: 'ext2', path: '/', dev: overlayDevice },
           { type: 'devs', path: '/dev' },
-          { type: 'proc', path: '/proc' },
-          { type: 'tmp', path: '/tmp' }
         ]
       });
 

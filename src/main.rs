@@ -14,8 +14,8 @@ use tower_http::services::ServeDir;
 use tracing::info;
 
 use warden_proxy::{
-    AppState, RequestLog,
-    config, proxy, vault, access, limiter, sessions, client_files,
+    AppState, RequestLog, Alert,
+    config, proxy, vault, access, limiter, sessions, client_files, traffic,
 };
 use vault::KeyVault;
 use access::AccessController;
@@ -142,6 +142,44 @@ async fn start_server(port_override: Option<u16>) {
 
     let (traffic_tx, _) = broadcast::channel(256);
 
+    // Initialize SQLite traffic store
+    let db_path = config::config_dir().join("traffic.db");
+    let traffic_store = Arc::new(
+        traffic::TrafficStore::open(&db_path)
+            .expect("Failed to open traffic database")
+    );
+    info!("Traffic DB: {}", db_path.display());
+
+    // Load recent entries from SQLite into ring buffer
+    let mut initial_log = VecDeque::with_capacity(1000);
+    match traffic_store.load_recent(1000) {
+        Ok(entries) => {
+            let count = entries.len();
+            for e in entries {
+                initial_log.push_back(e);
+            }
+            if count > 0 {
+                info!("Traffic log: {} entries loaded from database", count);
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to load traffic history: {}", e);
+        }
+    }
+
+    // Prune old entries on startup
+    let traffic_config = config.traffic.clone();
+    {
+        let store = traffic_store.clone();
+        let tc = traffic_config.clone();
+        tokio::task::spawn_blocking(move || {
+            match store.prune(&tc) {
+                Ok(n) if n > 0 => info!("Traffic DB: pruned {} old entries", n),
+                _ => {}
+            }
+        });
+    }
+
     let state = Arc::new(AppState {
         config: config.clone(),
         vault,
@@ -151,16 +189,52 @@ async fn start_server(port_override: Option<u16>) {
         client,
         start_time: std::time::Instant::now(),
         request_count: AtomicU64::new(0),
-        traffic_log: RwLock::new(VecDeque::with_capacity(1000)),
+        traffic_log: RwLock::new(initial_log),
         traffic_tx,
+        traffic_store: traffic_store.clone(),
+        alerts: RwLock::new(Vec::new()),
     });
+
+    // Background task: prune traffic DB every hour + prune old alerts
+    {
+        let store = traffic_store.clone();
+        let tc = traffic_config.clone();
+        let alert_state = state.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(3600));
+            loop {
+                interval.tick().await;
+                // Prune SQLite
+                let s = store.clone();
+                let t = tc.clone();
+                let _ = tokio::task::spawn_blocking(move || {
+                    s.prune(&t).ok();
+                }).await;
+                // Prune alerts older than 1 hour
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                let one_hour_ago = now.saturating_sub(3_600_000);
+                let mut alerts = alert_state.alerts.write().await;
+                alerts.retain(|a| a.timestamp > one_hour_ago && !a.dismissed);
+            }
+        });
+    }
 
     let mut app = Router::new()
         .route("/health", get(health))
         .route("/status", get(status))
         .route("/routes", get(routes))
+        // Traffic API
         .route("/admin/api/traffic", get(traffic_list))
         .route("/admin/api/traffic/stream", get(traffic_stream))
+        .route("/admin/api/traffic/stats", get(traffic_stats))
+        .route("/admin/api/traffic/export", get(traffic_export))
+        .route("/admin/api/traffic/clear", post(traffic_clear))
+        // Alerts API
+        .route("/admin/api/alerts", get(alerts_list))
+        .route("/admin/api/alerts/{id}/dismiss", post(alert_dismiss))
         // Session management API
         .route("/admin/api/sessions", get(sessions_list))
         .route("/admin/api/sessions/capture", post(sessions_capture))
@@ -198,6 +272,9 @@ async fn start_server(port_override: Option<u16>) {
         app = app.fallback_service(fallback);
     }
 
+    // Add COEP/COOP headers for WebVM (SharedArrayBuffer support)
+    app = app.layer(axum::middleware::from_fn(webvm_isolation_headers));
+
     let addr = format!("127.0.0.1:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
 
@@ -206,6 +283,7 @@ async fn start_server(port_override: Option<u16>) {
     if public_dir.exists() {
         println!("   Static: {}", public_dir.display());
     }
+    println!("   Traffic DB: {}", db_path.display());
 
     // Graceful shutdown on SIGTERM/SIGINT
     let shutdown = async {
@@ -276,18 +354,66 @@ async fn routes(State(state): State<Arc<AppState>>) -> Json<serde_json::Value> {
     Json(serde_json::json!(route_map))
 }
 
+// ════════════════════════════════════════════════════════
+// Traffic API
+// ════════════════════════════════════════════════════════
+
+/// Middleware: inject Cross-Origin-Embedder-Policy and Cross-Origin-Opener-Policy
+/// headers for WebVM pages. Required for SharedArrayBuffer (CheerpX).
+async fn webvm_isolation_headers(
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    let is_webvm = req.uri().path().starts_with("/apps/webvm");
+    let mut resp = next.run(req).await;
+    if is_webvm {
+        let headers = resp.headers_mut();
+        headers.insert(
+            "cross-origin-embedder-policy",
+            "require-corp".parse().unwrap(),
+        );
+        headers.insert(
+            "cross-origin-opener-policy",
+            "same-origin".parse().unwrap(),
+        );
+    }
+    resp
+}
+
 async fn traffic_list(
     State(state): State<Arc<AppState>>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Json<serde_json::Value> {
-    let log = state.traffic_log.read().await;
-    let since: u64 = params.get("since")
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(0);
-    let entries: Vec<&RequestLog> = log.iter()
-        .filter(|e| e.timestamp > since)
-        .collect();
-    Json(serde_json::json!(entries))
+    let since = params.get("since").and_then(|s| s.parse::<u64>().ok());
+    let until = params.get("until").and_then(|s| s.parse::<u64>().ok());
+    let service = params.get("service").cloned();
+    let method = params.get("method").cloned();
+    let status_filter = params.get("status").and_then(|s| s.parse::<u16>().ok());
+    let path_filter = params.get("path").cloned();
+    let limit = params.get("limit").and_then(|s| s.parse::<usize>().ok()).unwrap_or(1000);
+
+    // If only "since" is provided and no other filters, use the fast ring buffer path
+    if until.is_none() && service.is_none() && method.is_none()
+        && status_filter.is_none() && path_filter.is_none()
+    {
+        let log = state.traffic_log.read().await;
+        let since_val = since.unwrap_or(0);
+        let entries: Vec<&RequestLog> = log.iter()
+            .filter(|e| e.timestamp > since_val)
+            .collect();
+        return Json(serde_json::json!(entries));
+    }
+
+    // Otherwise, query SQLite for filtered results
+    let store = state.traffic_store.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        store.query(since, until, service.as_deref(), method.as_deref(), status_filter, path_filter.as_deref(), limit)
+    }).await;
+
+    match result {
+        Ok(Ok(entries)) => Json(serde_json::json!(entries)),
+        _ => Json(serde_json::json!([])),
+    }
 }
 
 async fn traffic_stream(
@@ -316,6 +442,99 @@ async fn traffic_stream(
         .header("access-control-allow-origin", "*")
         .body(body)
         .unwrap()
+}
+
+async fn traffic_stats(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Json<serde_json::Value> {
+    let since = params.get("since").and_then(|s| s.parse::<u64>().ok());
+    let store = state.traffic_store.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        store.stats(since)
+    }).await;
+
+    match result {
+        Ok(Ok(stats)) => Json(stats),
+        _ => Json(serde_json::json!({"error": "Failed to compute stats"})),
+    }
+}
+
+async fn traffic_export(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    use axum::response::IntoResponse;
+
+    let since = params.get("since").and_then(|s| s.parse::<u64>().ok());
+    let until = params.get("until").and_then(|s| s.parse::<u64>().ok());
+    let service = params.get("service").cloned();
+    let store = state.traffic_store.clone();
+
+    let result = tokio::task::spawn_blocking(move || {
+        store.export_csv(since, until, service.as_deref())
+    }).await;
+
+    match result {
+        Ok(Ok(csv)) => {
+            Response::builder()
+                .header("content-type", "text/csv")
+                .header("content-disposition", "attachment; filename=warden-traffic.csv")
+                .body(Body::from(csv))
+                .unwrap()
+        }
+        _ => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": "Export failed"})),
+        ).into_response(),
+    }
+}
+
+async fn traffic_clear(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    // Clear ring buffer
+    {
+        let mut log = state.traffic_log.write().await;
+        log.clear();
+    }
+
+    // Clear SQLite
+    let store = state.traffic_store.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        store.clear()
+    }).await;
+
+    match result {
+        Ok(Ok(())) => Json(serde_json::json!({"status": "cleared"})),
+        _ => Json(serde_json::json!({"error": "Failed to clear traffic data"})),
+    }
+}
+
+// ════════════════════════════════════════════════════════
+// Alerts API
+// ════════════════════════════════════════════════════════
+
+async fn alerts_list(
+    State(state): State<Arc<AppState>>,
+) -> Json<serde_json::Value> {
+    let alerts = state.alerts.read().await;
+    let active: Vec<&Alert> = alerts.iter().filter(|a| !a.dismissed).collect();
+    Json(serde_json::json!(active))
+}
+
+async fn alert_dismiss(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Json<serde_json::Value> {
+    let mut alerts = state.alerts.write().await;
+    if let Some(alert) = alerts.iter_mut().find(|a| a.id == id) {
+        alert.dismissed = true;
+        Json(serde_json::json!({"status": "dismissed", "id": id}))
+    } else {
+        Json(serde_json::json!({"error": "Alert not found"}))
+    }
 }
 
 // ════════════════════════════════════════════════════════

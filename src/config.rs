@@ -25,6 +25,40 @@ pub struct WardenConfig {
     pub request_timeout: u64,
     /// Enable structured JSON logging
     pub json_logs: bool,
+    /// Traffic monitoring configuration
+    #[serde(default)]
+    pub traffic: TrafficConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TrafficConfig {
+    /// Inspection level: "metadata", "headers", or "full"
+    pub inspection_level: String,
+    /// How many days to retain traffic data
+    pub retention_days: u64,
+    /// Maximum database size in MB
+    pub max_db_size_mb: u64,
+    /// Paths to exclude from traffic logging
+    pub excluded_paths: Vec<String>,
+    /// Whether alert detection is enabled
+    pub alerts_enabled: bool,
+}
+
+impl Default for TrafficConfig {
+    fn default() -> Self {
+        Self {
+            inspection_level: "metadata".to_string(),
+            retention_days: 7,
+            max_db_size_mb: 50,
+            excluded_paths: vec![
+                "/health".to_string(),
+                "/status".to_string(),
+                "/favicon.svg".to_string(),
+            ],
+            alerts_enabled: true,
+        }
+    }
 }
 
 impl Default for WardenConfig {
@@ -40,6 +74,7 @@ impl Default for WardenConfig {
             max_body_size: 10_485_760,
             request_timeout: 30,
             json_logs: false,
+            traffic: TrafficConfig::default(),
         }
     }
 }

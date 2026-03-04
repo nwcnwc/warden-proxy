@@ -61,10 +61,11 @@
   .hdr-btn {
     background: none; border: 1px solid var(--border); color: var(--text-muted);
     border-radius: 6px; padding: 6px 12px; cursor: pointer; font-size: 13px;
-    font-family: inherit; transition: all 0.2s;
+    font-family: inherit; transition: all 0.2s; white-space: nowrap;
   }
   .hdr-btn:hover { border-color: var(--accent-border); color: var(--text); }
   .hdr-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .hdr-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
 
   /* Stats bar */
   .stats-bar {
@@ -76,6 +77,7 @@
   .stat-label { color: var(--text-muted); }
   .stat-val { font-weight: 600; font-variant-numeric: tabular-nums; }
   .stat-val.live { color: var(--success); }
+  .stat-sep { color: var(--border); }
 
   /* Filter bar */
   .filter-bar {
@@ -90,8 +92,10 @@
     background: var(--bg); color: var(--text); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 8px; font-size: 12px; font-family: inherit; width: 80px;
   }
+  .filter-input.wide { width: 160px; }
   .filter-input:focus { outline: none; border-color: var(--accent); }
   .filter-label { font-size: 12px; color: var(--text-muted); }
+  .filter-sep { width: 1px; height: 20px; background: var(--border); }
 
   /* Table */
   .table-wrap { flex: 1; overflow: auto; }
@@ -114,6 +118,11 @@
   tr:hover td { background: var(--surface-hover); }
   tr.expanded td { background: var(--surface); }
   tr.clickable { cursor: pointer; }
+
+  /* Alert severity left border */
+  tr.alert-critical td:first-child { border-left: 3px solid var(--danger); }
+  tr.alert-warning td:first-child { border-left: 3px solid var(--warn); }
+  tr.alert-info td:first-child { border-left: 3px solid #ffcc00; }
 
   .method-badge {
     font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 3px;
@@ -144,6 +153,10 @@
   .td-dur { color: var(--text-muted); }
   .td-size { color: var(--text-muted); font-size: 12px; }
 
+  /* Inspection icons */
+  .td-inspect { font-size: 14px; letter-spacing: 2px; }
+  .td-inspect span { cursor: help; }
+
   /* Expanded row */
   .detail-row td {
     padding: 12px 16px; background: var(--surface);
@@ -161,13 +174,34 @@
     font-family: 'SF Mono', monospace; font-size: 12px;
     background: var(--bg); border: 1px solid var(--border);
     border-radius: 4px; padding: 8px; line-height: 1.5;
-    max-height: 200px; overflow: auto;
+    max-height: 200px; overflow: auto; white-space: pre-wrap;
   }
 
   .empty-state {
     text-align: center; padding: 60px 20px; color: var(--text-muted);
   }
   .empty-state h3 { font-size: 16px; margin-bottom: 8px; color: var(--text); }
+
+  /* Confirm dialog */
+  .confirm-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    z-index: 1000; align-items: center; justify-content: center;
+  }
+  .confirm-overlay.visible { display: flex; }
+  .confirm-box {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; max-width: 360px;
+    text-align: center;
+  }
+  .confirm-box h3 { margin-bottom: 8px; }
+  .confirm-box p { color: var(--text-muted); font-size: 13px; margin-bottom: 16px; }
+  .confirm-btns { display: flex; gap: 8px; justify-content: center; }
+  .confirm-btns button {
+    padding: 8px 20px; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-size: 13px; border: 1px solid var(--border);
+  }
+  .btn-cancel { background: var(--surface); color: var(--text); }
+  .btn-danger { background: var(--danger); color: #fff; border-color: var(--danger); }
 
   @media (max-width: 768px) {
     .stats-bar { gap: 12px; }
@@ -191,7 +225,8 @@
   </div>
   <div class="header-right">
     <button class="hdr-btn" id="auto-scroll-btn" onclick="toggleAutoScroll()">Auto-scroll: ON</button>
-    <button class="hdr-btn" onclick="clearView()">Clear</button>
+    <button class="hdr-btn" onclick="exportCSV()">Export CSV</button>
+    <button class="hdr-btn danger" onclick="showClearConfirm()">Clear</button>
   </div>
 </div>
 
@@ -204,6 +239,20 @@
     <span class="stat-label">Req/min:</span>
     <span class="stat-val live" id="stat-rpm">0</span>
   </div>
+  <span class="stat-sep"></span>
+  <div class="stat">
+    <span class="stat-label">P50:</span>
+    <span class="stat-val" id="stat-p50">-</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">P95:</span>
+    <span class="stat-val" id="stat-p95">-</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">P99:</span>
+    <span class="stat-val" id="stat-p99">-</span>
+  </div>
+  <span class="stat-sep"></span>
   <div class="stat">
     <span class="stat-label">Source:</span>
     <span class="stat-val" id="stat-source">Connecting...</span>
@@ -212,6 +261,13 @@
 
 <div class="filter-bar">
   <span class="filter-label">Filter:</span>
+  <select class="filter-select" id="filter-range" onchange="onRangeChange()">
+    <option value="live">Live (ring buffer)</option>
+    <option value="1h">Last hour</option>
+    <option value="24h">Last 24 hours</option>
+    <option value="7d">Last 7 days</option>
+    <option value="all">All</option>
+  </select>
   <select class="filter-select" id="filter-service" onchange="applyFilters()">
     <option value="">All Services</option>
   </select>
@@ -220,6 +276,8 @@
     <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>HEAD</option><option>OPTIONS</option>
   </select>
   <input class="filter-input" id="filter-status" placeholder="Status" oninput="applyFilters()">
+  <div class="filter-sep"></div>
+  <input class="filter-input wide" id="filter-path" placeholder="Path search..." oninput="applyFilters()">
 </div>
 
 <div class="table-wrap" id="table-wrap">
@@ -233,6 +291,7 @@
         <th>Status</th>
         <th>Duration</th>
         <th>Size</th>
+        <th>Inspection</th>
       </tr>
     </thead>
     <tbody id="traffic-body">
@@ -241,6 +300,18 @@
   <div class="empty-state" id="empty-state">
     <h3>Waiting for traffic...</h3>
     <p>Requests through Warden Proxy will appear here in real-time.</p>
+  </div>
+</div>
+
+<!-- Clear confirmation dialog -->
+<div class="confirm-overlay" id="clear-confirm">
+  <div class="confirm-box">
+    <h3>Clear all traffic data?</h3>
+    <p>This will permanently delete all traffic entries from the database and the live view. This cannot be undone.</p>
+    <div class="confirm-btns">
+      <button class="btn-cancel" onclick="hideClearConfirm()">Cancel</button>
+      <button class="btn-danger" onclick="clearTraffic()">Clear Everything</button>
+    </div>
   </div>
 </div>
 
@@ -253,6 +324,7 @@
   var eventSource = null;
   var recentTimestamps = []; // for RPM calculation
   var knownServices = {};
+  var currentRange = 'live';
 
   // ── SSE / Polling ──
   function connectSSE() {
@@ -266,7 +338,9 @@
       try {
         var entry = JSON.parse(e.data);
         if (entry.type === 'lagged') return;
-        addEntry(entry);
+        if (currentRange === 'live') {
+          addEntry(entry);
+        }
       } catch(ex) {}
     };
     eventSource.onerror = function() {
@@ -281,6 +355,7 @@
   var lastPollTimestamp = 0;
   function startPolling() {
     pollTimer = setInterval(async function() {
+      if (currentRange !== 'live') return;
       try {
         var url = '/admin/api/traffic' + (lastPollTimestamp ? '?since=' + lastPollTimestamp : '');
         var resp = await fetch(url);
@@ -294,6 +369,53 @@
     }, 2000);
   }
 
+  // ── Range change: query SQLite for historical data ──
+  window.onRangeChange = async function() {
+    currentRange = document.getElementById('filter-range').value;
+
+    if (currentRange === 'live') {
+      // Reload from ring buffer
+      allEntries = [];
+      try {
+        var resp = await fetch('/admin/api/traffic');
+        var entries = await resp.json();
+        entries.forEach(function(entry) { addEntry(entry, true); });
+        applyFilters();
+      } catch(e) {}
+      return;
+    }
+
+    // Calculate since timestamp
+    var now = Date.now();
+    var since = null;
+    if (currentRange === '1h') since = now - 3600000;
+    else if (currentRange === '24h') since = now - 86400000;
+    else if (currentRange === '7d') since = now - 604800000;
+    // 'all' = no since
+
+    try {
+      var url = '/admin/api/traffic?limit=5000';
+      if (since) url += '&since=' + since;
+
+      var svc = document.getElementById('filter-service').value;
+      var method = document.getElementById('filter-method').value;
+      if (svc) url += '&service=' + encodeURIComponent(svc);
+      if (method) url += '&method=' + encodeURIComponent(method);
+
+      var resp = await fetch(url);
+      var entries = await resp.json();
+      allEntries = entries;
+      // Track services
+      entries.forEach(function(e) {
+        if (e.service && !knownServices[e.service]) {
+          knownServices[e.service] = true;
+        }
+      });
+      updateServiceFilter();
+      applyFilters();
+    } catch(e) {}
+  };
+
   // ── Initial load ──
   async function loadInitial() {
     try {
@@ -303,11 +425,12 @@
       applyFilters();
     } catch(e) {}
     connectSSE();
+    fetchStats();
   }
 
   function addEntry(entry, batch) {
     allEntries.push(entry);
-    if (allEntries.length > 1000) allEntries.shift();
+    if (allEntries.length > 5000) allEntries.shift();
     if (entry.timestamp > lastPollTimestamp) lastPollTimestamp = entry.timestamp;
 
     // Track services for filter
@@ -329,11 +452,13 @@
     var svc = document.getElementById('filter-service').value;
     var method = document.getElementById('filter-method').value;
     var status = document.getElementById('filter-status').value.trim();
+    var pathFilter = document.getElementById('filter-path').value.trim().toLowerCase();
 
     filteredEntries = allEntries.filter(function(e) {
       if (svc && e.service !== svc) return false;
       if (method && e.method !== method) return false;
       if (status && String(e.status).indexOf(status) === -1) return false;
+      if (pathFilter && (e.path || '').toLowerCase().indexOf(pathFilter) === -1) return false;
       return true;
     });
 
@@ -350,6 +475,17 @@
       select.appendChild(opt);
     });
     select.value = current;
+  }
+
+  // ── Stats ──
+  async function fetchStats() {
+    try {
+      var resp = await fetch('/admin/api/traffic/stats');
+      var s = await resp.json();
+      document.getElementById('stat-p50').textContent = s.p50_ms != null ? s.p50_ms + 'ms' : '-';
+      document.getElementById('stat-p95').textContent = s.p95_ms != null ? s.p95_ms + 'ms' : '-';
+      document.getElementById('stat-p99').textContent = s.p99_ms != null ? s.p99_ms + 'ms' : '-';
+    } catch(e) {}
   }
 
   // ── Rendering ──
@@ -378,8 +514,16 @@
       var mClass = 'm-' + e.method;
       var sizeStr = formatSize(e.request_size + e.response_size);
       var isExpanded = e.id === expandedId;
+      var alertClass = e.alert_level ? ' alert-' + e.alert_level : '';
 
-      html += '<tr class="clickable' + (isExpanded ? ' expanded' : '') + '" data-id="' + esc(e.id) + '">' +
+      // Inspection icons
+      var inspectHtml = '';
+      if (e.key_injected) inspectHtml += '<span title="Key injected: ' + esc(e.key_injected) + '">\uD83D\uDD11</span>';
+      if (e.headers_stripped && e.headers_stripped.length) inspectHtml += '<span title="Headers stripped: ' + esc(e.headers_stripped.join(', ')) + '">\uD83D\uDDD1</span>';
+      if (e.tokens_substituted > 0) inspectHtml += '<span title="' + e.tokens_substituted + ' token swap(s)">\uD83D\uDD04</span>';
+      if (e.cookies_merged > 0) inspectHtml += '<span title="' + e.cookies_merged + ' cookies merged">\uD83C\uDF6A</span>';
+
+      html += '<tr class="clickable' + (isExpanded ? ' expanded' : '') + alertClass + '" data-id="' + esc(e.id) + '">' +
         '<td>' + timeStr + '</td>' +
         '<td><span class="method-badge ' + mClass + '">' + esc(e.method) + '</span></td>' +
         '<td class="td-service">' + esc(e.service) + '</td>' +
@@ -387,24 +531,11 @@
         '<td><span class="status-badge ' + sClass + '">' + e.status + '</span></td>' +
         '<td class="td-dur">' + e.duration_ms + 'ms</td>' +
         '<td class="td-size">' + sizeStr + '</td>' +
+        '<td class="td-inspect">' + inspectHtml + '</td>' +
         '</tr>';
 
       if (isExpanded) {
-        html += '<tr class="detail-row"><td colspan="7">' +
-          '<div class="detail-grid">' +
-            '<div class="detail-section"><h4>Request Details</h4><div class="detail-kv">' +
-              'ID: ' + esc(e.id) + '\n' +
-              'Origin: ' + esc(e.origin) + '\n' +
-              'Request Size: ' + formatSize(e.request_size) + '\n' +
-              'Response Size: ' + formatSize(e.response_size) +
-            '</div></div>' +
-            '<div class="detail-section"><h4>Timing</h4><div class="detail-kv">' +
-              'Timestamp: ' + new Date(e.timestamp).toISOString() + '\n' +
-              'Duration: ' + e.duration_ms + 'ms\n' +
-              'Service: ' + esc(e.service) + '\n' +
-              'Full Path: ' + esc(e.method + ' /proxy/' + e.service + '/' + (e.path || '')) +
-            '</div></div>' +
-          '</div></td></tr>';
+        html += renderDetail(e);
       }
     }
 
@@ -423,6 +554,65 @@
       var wrap = document.getElementById('table-wrap');
       wrap.scrollTop = 0; // newest at top
     }
+  }
+
+  function renderDetail(e) {
+    var left = 'ID: ' + esc(e.id) + '\n' +
+      'Origin: ' + esc(e.origin) + '\n' +
+      'Request Size: ' + formatSize(e.request_size) + '\n' +
+      'Response Size: ' + formatSize(e.response_size);
+
+    if (e.alert_level) {
+      left += '\nAlert: ' + esc(e.alert_level).toUpperCase();
+    }
+
+    var right = 'Timestamp: ' + new Date(e.timestamp).toISOString() + '\n' +
+      'Duration: ' + e.duration_ms + 'ms\n' +
+      'Service: ' + esc(e.service) + '\n' +
+      'Full Path: ' + esc(e.method + ' /proxy/' + e.service + '/' + (e.path || ''));
+
+    // Warden actions
+    var actions = '';
+    if (e.headers_stripped && e.headers_stripped.length) {
+      actions += 'Headers Stripped: ' + esc(e.headers_stripped.join(', ')) + '\n';
+    }
+    if (e.key_injected) {
+      actions += 'Key Injected: ' + esc(e.key_injected) + '\n';
+    }
+    if (e.tokens_substituted > 0) {
+      actions += 'Tokens Substituted: ' + e.tokens_substituted + '\n';
+    }
+    if (e.cookies_merged > 0) {
+      actions += 'Cookies Merged: ' + e.cookies_merged + '\n';
+    }
+    actions += 'Inspection Level: ' + esc(e.inspection_level || 'metadata');
+
+    var html = '<tr class="detail-row"><td colspan="8">' +
+      '<div class="detail-grid">' +
+        '<div class="detail-section"><h4>Request Details</h4><div class="detail-kv">' + left + '</div></div>' +
+        '<div class="detail-section"><h4>Timing</h4><div class="detail-kv">' + right + '</div></div>' +
+        '<div class="detail-section"><h4>Warden Actions</h4><div class="detail-kv">' + actions + '</div></div>';
+
+    // Request/Response headers if available
+    if (e.request_headers) {
+      html += '<div class="detail-section"><h4>Request Headers</h4><div class="detail-kv">' +
+        esc(JSON.stringify(e.request_headers, null, 2)) + '</div></div>';
+    }
+    if (e.response_headers) {
+      html += '<div class="detail-section"><h4>Response Headers</h4><div class="detail-kv">' +
+        esc(JSON.stringify(e.response_headers, null, 2)) + '</div></div>';
+    }
+    if (e.request_body_preview) {
+      html += '<div class="detail-section"><h4>Request Body Preview</h4><div class="detail-kv">' +
+        esc(e.request_body_preview) + '</div></div>';
+    }
+    if (e.response_body_preview) {
+      html += '<div class="detail-section"><h4>Response Body Preview</h4><div class="detail-kv">' +
+        esc(e.response_body_preview) + '</div></div>';
+    }
+
+    html += '</div></td></tr>';
+    return html;
   }
 
   // ── Auto-scroll ──
@@ -454,6 +644,43 @@
     renderTable();
   };
 
+  // ── Export CSV ──
+  window.exportCSV = function() {
+    var params = [];
+    var range = document.getElementById('filter-range').value;
+    var now = Date.now();
+    if (range === '1h') params.push('since=' + (now - 3600000));
+    else if (range === '24h') params.push('since=' + (now - 86400000));
+    else if (range === '7d') params.push('since=' + (now - 604800000));
+
+    var svc = document.getElementById('filter-service').value;
+    if (svc) params.push('service=' + encodeURIComponent(svc));
+
+    var url = '/admin/api/traffic/export?format=csv';
+    if (params.length) url += '&' + params.join('&');
+
+    window.open(url, '_blank');
+  };
+
+  // ── Clear with confirmation ──
+  window.showClearConfirm = function() {
+    document.getElementById('clear-confirm').classList.add('visible');
+  };
+  window.hideClearConfirm = function() {
+    document.getElementById('clear-confirm').classList.remove('visible');
+  };
+  window.clearTraffic = async function() {
+    hideClearConfirm();
+    try {
+      await fetch('/admin/api/traffic/clear', {method: 'POST'});
+      allEntries = [];
+      filteredEntries = [];
+      expandedId = null;
+      recentTimestamps = [];
+      renderTable();
+    } catch(e) {}
+  };
+
   // ── RPM counter ──
   setInterval(function() {
     var now = Date.now();
@@ -461,6 +688,9 @@
     recentTimestamps = recentTimestamps.filter(function(t) { return t > oneMinAgo; });
     document.getElementById('stat-rpm').textContent = recentTimestamps.length;
   }, 1000);
+
+  // Refresh stats every 30s
+  setInterval(fetchStats, 30000);
 
   // ── Helpers ──
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
