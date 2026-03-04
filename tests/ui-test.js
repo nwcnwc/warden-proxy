@@ -121,7 +121,7 @@ async function testLaunchpad(browser) {
   assert(ui.links.some(l => l.includes('/apps/api-tester')), 'Links to API Tester');
   assert(ui.links.some(l => l.includes('/apps/webvm')), 'Links to WebVM');
   assert(ui.links.some(l => l.includes('/admin/keys')), 'Links to Key Manager');
-  assert(ui.links.some(l => l.includes('/admin/traffic')), 'Links to Traffic Monitor');
+  assert(ui.links.some(l => l.includes('/admin/traffic')), 'Links to Traffic Control');
   assert(errors.length === 0, `No JS errors (got ${errors.length})`);
 
   // Status bar should show online
@@ -348,7 +348,7 @@ async function testAdminKeyManager(browser) {
 }
 
 async function testAdminTraffic(browser) {
-  console.log('\n📊 Admin: Traffic Monitor');
+  console.log('\n📊 Admin: Traffic Control');
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
