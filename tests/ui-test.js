@@ -110,10 +110,9 @@ async function testLaunchpad(browser) {
   }));
 
   assert(ui.title === 'Warden Launchpad', 'Title is "Warden Launchpad"');
-  const bodyUpper = ui.bodyText.toUpperCase();
-  assert(bodyUpper.includes("WARDEN") && bodyUpper.includes("OFFICE"), 'Has "Warden\'s Office" section');
-  assert(ui.bodyText.toLowerCase().includes('real keys'), 'Has "real keys" subtitle');
-  assert(bodyUpper.includes('JAIL'), 'Has "The Jail" section');
+  assert(ui.bodyText.includes("Warden's Office") || ui.bodyText.includes("Warden\u2019s Office"), 'Has "Warden\'s Office" section');
+  assert(ui.bodyText.includes('real keys'), 'Has "real keys" subtitle');
+  assert(ui.bodyText.includes('The Jail'), 'Has "The Jail" section');
   assert(ui.bodyText.includes('fake keys'), 'Has "fake keys" subtitle');
   assert(ui.adminCards >= 2, `Has admin cards (found ${ui.adminCards})`);
   assert(ui.appCards >= 3, `Has app cards (found ${ui.appCards})`);
