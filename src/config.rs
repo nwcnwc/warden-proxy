@@ -28,6 +28,13 @@ pub struct WardenConfig {
     /// Traffic monitoring configuration
     #[serde(default)]
     pub traffic: TrafficConfig,
+    /// Network bind mode: "localhost" (default), "tailscale", or "dangerous"
+    #[serde(default = "default_bind")]
+    pub bind: String,
+}
+
+fn default_bind() -> String {
+    "localhost".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,6 +82,7 @@ impl Default for WardenConfig {
             request_timeout: 30,
             json_logs: false,
             traffic: TrafficConfig::default(),
+            bind: "localhost".to_string(),
         }
     }
 }
@@ -218,6 +226,77 @@ pub fn load_config() -> Result<WardenConfig, Box<dyn std::error::Error>> {
     let config: WardenConfig = serde_json::from_str(&interpolated)?;
 
     Ok(config)
+}
+
+/// Validate bind mode value
+pub fn validate_bind(bind: &str) -> Result<(), String> {
+    match bind {
+        "localhost" | "tailscale" | "dangerous" => Ok(()),
+        other => Err(format!(
+            "Unknown bind mode '{}'. Valid values: localhost, tailscale, dangerous",
+            other
+        )),
+    }
+}
+
+/// Detect the Tailscale IPv4 address by running `tailscale ip -4`
+pub fn detect_tailscale_ip() -> Result<String, String> {
+    let output = std::process::Command::new("tailscale")
+        .args(["ip", "-4"])
+        .output()
+        .map_err(|e| format!("Failed to run 'tailscale ip -4': {}. Is Tailscale installed?", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "'tailscale ip -4' failed (exit {}): {}",
+            output.status,
+            stderr.trim()
+        ));
+    }
+
+    let ip = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if ip.is_empty() {
+        return Err("'tailscale ip -4' returned empty output".to_string());
+    }
+
+    // Basic validation: should look like an IPv4 address
+    if ip.parse::<std::net::Ipv4Addr>().is_err() {
+        return Err(format!("'tailscale ip -4' returned invalid IP: {}", ip));
+    }
+
+    Ok(ip)
+}
+
+/// Resolve bind addresses from the effective bind mode.
+/// Returns a list of (ip, port) pairs to bind to.
+pub fn resolve_bind_addresses(bind: &str, port: u16) -> Result<Vec<(String, u16)>, String> {
+    validate_bind(bind)?;
+    match bind {
+        "localhost" => Ok(vec![("127.0.0.1".to_string(), port)]),
+        "tailscale" => {
+            let ts_ip = detect_tailscale_ip()?;
+            Ok(vec![
+                ("127.0.0.1".to_string(), port),
+                (ts_ip, port),
+            ])
+        }
+        "dangerous" => Ok(vec![("0.0.0.0".to_string(), port)]),
+        _ => unreachable!(),
+    }
+}
+
+/// Parse the output of `tailscale ip -4` into a trimmed IP string.
+/// Exposed for testing.
+pub fn parse_tailscale_output(stdout: &str) -> Result<String, String> {
+    let ip = stdout.trim().to_string();
+    if ip.is_empty() {
+        return Err("Empty output from tailscale".to_string());
+    }
+    if ip.parse::<std::net::Ipv4Addr>().is_err() {
+        return Err(format!("Invalid IP from tailscale: {}", ip));
+    }
+    Ok(ip)
 }
 
 /// Save config to file
@@ -510,5 +589,89 @@ mod tests {
     fn expand_absolute_path_unchanged() {
         let expanded = expand_path("/tmp/test");
         assert_eq!(expanded, PathBuf::from("/tmp/test"));
+    }
+
+    // ── Bind mode ──
+
+    #[test]
+    fn bind_defaults_to_localhost() {
+        let json = r#"{}"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.bind, "localhost");
+    }
+
+    #[test]
+    fn bind_parses_localhost() {
+        let json = r#"{ "bind": "localhost" }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.bind, "localhost");
+    }
+
+    #[test]
+    fn bind_parses_tailscale() {
+        let json = r#"{ "bind": "tailscale" }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.bind, "tailscale");
+    }
+
+    #[test]
+    fn bind_parses_dangerous() {
+        let json = r#"{ "bind": "dangerous" }"#;
+        let config: WardenConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.bind, "dangerous");
+    }
+
+    #[test]
+    fn validate_bind_accepts_valid_values() {
+        assert!(validate_bind("localhost").is_ok());
+        assert!(validate_bind("tailscale").is_ok());
+        assert!(validate_bind("dangerous").is_ok());
+    }
+
+    #[test]
+    fn validate_bind_rejects_unknown() {
+        let result = validate_bind("everywhere");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("everywhere"));
+    }
+
+    #[test]
+    fn resolve_bind_localhost() {
+        let addrs = resolve_bind_addresses("localhost", 7400).unwrap();
+        assert_eq!(addrs, vec![("127.0.0.1".to_string(), 7400)]);
+    }
+
+    #[test]
+    fn resolve_bind_dangerous() {
+        let addrs = resolve_bind_addresses("dangerous", 7400).unwrap();
+        assert_eq!(addrs, vec![("0.0.0.0".to_string(), 7400)]);
+    }
+
+    #[test]
+    fn resolve_bind_rejects_invalid() {
+        assert!(resolve_bind_addresses("invalid", 7400).is_err());
+    }
+
+    // ── Tailscale output parsing ──
+
+    #[test]
+    fn parse_tailscale_output_valid() {
+        assert_eq!(parse_tailscale_output("100.64.0.1\n").unwrap(), "100.64.0.1");
+    }
+
+    #[test]
+    fn parse_tailscale_output_with_whitespace() {
+        assert_eq!(parse_tailscale_output("  100.100.1.2  \n").unwrap(), "100.100.1.2");
+    }
+
+    #[test]
+    fn parse_tailscale_output_empty() {
+        assert!(parse_tailscale_output("").is_err());
+        assert!(parse_tailscale_output("  \n").is_err());
+    }
+
+    #[test]
+    fn parse_tailscale_output_invalid_ip() {
+        assert!(parse_tailscale_output("not-an-ip\n").is_err());
     }
 }

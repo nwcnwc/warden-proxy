@@ -40,6 +40,12 @@ enum Commands {
         /// Port to listen on (overrides config)
         #[arg(short, long)]
         port: Option<u16>,
+        /// Bind to Tailscale IP + localhost for secure remote access
+        #[arg(long, conflicts_with = "dangerously_allow_outsiders")]
+        tailscale: bool,
+        /// Bind to 0.0.0.0 (accessible from ANY network — dangerous!)
+        #[arg(long, conflicts_with = "tailscale")]
+        dangerously_allow_outsiders: bool,
     },
     /// Show proxy status
     Status,
@@ -88,8 +94,15 @@ async fn main() {
         Commands::Init => {
             config::init_config().expect("Failed to initialize config");
         }
-        Commands::Start { port } => {
-            start_server(port).await;
+        Commands::Start { port, tailscale, dangerously_allow_outsiders } => {
+            let bind_override = if tailscale {
+                Some("tailscale")
+            } else if dangerously_allow_outsiders {
+                Some("dangerous")
+            } else {
+                None
+            };
+            start_server(port, bind_override).await;
         }
         Commands::Status => {
             check_status().await;
@@ -109,7 +122,7 @@ async fn main() {
     }
 }
 
-async fn start_server(port_override: Option<u16>) {
+async fn start_server(port_override: Option<u16>, bind_override: Option<&str>) {
     let config = config::load_config().expect("Failed to load config");
 
     // Initialize logging
@@ -275,17 +288,47 @@ async fn start_server(port_override: Option<u16>) {
     // Add COEP/COOP headers for WebVM (SharedArrayBuffer support)
     app = app.layer(axum::middleware::from_fn(webvm_isolation_headers));
 
-    let addr = format!("127.0.0.1:{}", port);
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    // Resolve bind mode: CLI flag overrides config
+    let bind_mode = bind_override.unwrap_or(&config.bind);
+    if let Err(e) = config::validate_bind(bind_mode) {
+        eprintln!("Error: {}", e);
+        std::process::exit(1);
+    }
 
-    println!("🔒 Warden Proxy running on http://{}", addr);
+    let bind_addrs = match config::resolve_bind_addresses(bind_mode, port) {
+        Ok(addrs) => addrs,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Print startup banner
+    if bind_mode == "dangerous" {
+        eprintln!();
+        eprintln!("  WARNING: Binding to 0.0.0.0 -- Warden is accessible from ANY network!");
+        eprintln!("  API keys may be exposed to anyone who can reach this machine.");
+        eprintln!("  Use --tailscale for secure remote access instead.");
+        eprintln!();
+    }
+
+    println!("🔒 Warden Proxy running:");
+    for (ip, p) in &bind_addrs {
+        println!("   http://{}:{}", ip, p);
+    }
+    if bind_mode == "tailscale" {
+        // The second address is the Tailscale IP
+        if let Some((ts_ip, _)) = bind_addrs.get(1) {
+            println!("   Tailscale IP: {}", ts_ip);
+        }
+    }
     println!("   Config: {}", config::config_path().display());
     if public_dir.exists() {
         println!("   Static: {}", public_dir.display());
     }
     println!("   Traffic DB: {}", db_path.display());
 
-    // Graceful shutdown on SIGTERM/SIGINT
+    // Graceful shutdown signal
     let shutdown = async {
         let ctrl_c = tokio::signal::ctrl_c();
         #[cfg(unix)]
@@ -306,10 +349,46 @@ async fn start_server(port_override: Option<u16>) {
         println!("\n🔒 Warden Proxy shutting down...");
     };
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown)
-        .await
-        .unwrap();
+    // Bind and serve
+    if bind_addrs.len() == 1 {
+        let addr = format!("{}:{}", bind_addrs[0].0, bind_addrs[0].1);
+        let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown)
+            .await
+            .unwrap();
+    } else {
+        // Dual-bind mode (tailscale): serve on both addresses
+        let mut listeners = Vec::new();
+        for (ip, p) in &bind_addrs {
+            let addr = format!("{}:{}", ip, p);
+            let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+            listeners.push(listener);
+        }
+
+        let shutdown_notify = Arc::new(tokio::sync::Notify::new());
+
+        // Spawn a task for each listener
+        let mut handles = Vec::new();
+        for listener in listeners {
+            let app_clone = app.clone();
+            let notify = shutdown_notify.clone();
+            handles.push(tokio::spawn(async move {
+                axum::serve(listener, app_clone)
+                    .with_graceful_shutdown(async move { notify.notified().await })
+                    .await
+                    .unwrap();
+            }));
+        }
+
+        // Wait for shutdown signal, then notify all servers
+        shutdown.await;
+        shutdown_notify.notify_waiters();
+
+        for handle in handles {
+            handle.await.ok();
+        }
+    }
 }
 
 async fn health() -> Json<serde_json::Value> {
