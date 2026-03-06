@@ -225,7 +225,14 @@
   </span>
 </div>
 
-<script src="/client/warden-loader.js"></script>
+<!-- WebVM needs its own SW for cross-origin isolation (COEP/COOP/CORP on all responses) -->
+<script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/apps/webvm/sw.js', { scope: '/apps/webvm/' })
+      .then(r => console.log('[WebVM] Isolation SW registered'))
+      .catch(e => console.error('[WebVM] SW registration failed:', e));
+  }
+</script>
 <script src="https://cdn.jsdelivr.net/npm/xterm@5/lib/xterm.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 <script src="https://cxrtnc.leaningtech.com/1.2.2/cx.js"></script>
@@ -312,23 +319,37 @@
       setLoading('Downloading disk image...', 'Streaming Debian Linux from cloud (first load may take a moment)...');
       setStatus('Booting...', 'loading');
 
-      // Create cloud device (streams ext2 image from CDN via WebSocket)
-      var cloudDevice = await CheerpX.CloudDevice.create(
-        'wss://disks.webvm.io/debian_large_20230522_5044875331.ext2'
-      );
+      // Create cloud device (streams ext2 blocks on-demand via WebSocket)
+      var diskUrl = 'wss://disks.webvm.io/debian_large_20230522_5044875331_2.ext2';
+      var cloudDevice;
+      try {
+        cloudDevice = await CheerpX.CloudDevice.create(diskUrl);
+      } catch(e) {
+        // Fallback: try HTTPS if WebSocket fails
+        setLoading('Retrying disk connection...', 'Falling back to HTTPS transport...');
+        cloudDevice = await CheerpX.CloudDevice.create('https:' + diskUrl.substring(4));
+      }
 
       setLoading('Setting up local storage...', 'Creating persistent overlay for your changes...');
 
       // Local IndexedDB cache + writable overlay
-      var idbDevice = await CheerpX.IDBDevice.create('webvm-block1');
+      var idbDevice = await CheerpX.IDBDevice.create('webvm-warden');
       var overlayDevice = await CheerpX.OverlayDevice.create(cloudDevice, idbDevice);
+
+      // Filesystem devices
+      var webDevice = await CheerpX.WebDevice.create('');
+      var dataDevice = await CheerpX.DataDevice.create();
 
       setLoading('Creating CheerpX instance...', 'Mounting filesystem and initializing virtual machine...');
 
       var cx = await CheerpX.Linux.create({
         mounts: [
           { type: 'ext2', path: '/', dev: overlayDevice },
+          { type: 'dir', path: '/app', dev: webDevice },
+          { type: 'dir', path: '/data', dev: dataDevice },
           { type: 'devs', path: '/dev' },
+          { type: 'proc', path: '/proc' },
+          { type: 'sys', path: '/sys' },
         ]
       });
 
@@ -343,14 +364,15 @@
       // Run bash shell
       await cx.run('/bin/bash', ['--login'], {
         env: [
-          'HOME=/root',
-          'USER=root',
+          'HOME=/home/user',
+          'USER=user',
           'SHELL=/bin/bash',
-          'TERM=xterm-256color',
-          'PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin',
-          'LANG=en_US.UTF-8'
+          'TERM=xterm',
+          'EDITOR=vim',
+          'LANG=en_US.UTF-8',
+          'LC_ALL=C'
         ],
-        cwd: '/root'
+        cwd: '/home/user'
       });
 
     } catch(e) {

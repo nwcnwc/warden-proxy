@@ -455,6 +455,10 @@ async fn webvm_isolation_headers(
             "cross-origin-opener-policy",
             "same-origin".parse().unwrap(),
         );
+        headers.insert(
+            "cross-origin-resource-policy",
+            "cross-origin".parse().unwrap(),
+        );
     }
     resp
 }
